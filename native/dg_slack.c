@@ -1,4 +1,4 @@
-//had to ask ai to help me here with the png decode in some areas 
+//had to ask ai to help me here with the png decode in some areas wherever commented, all ai output was reviewed and tested by me
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -189,3 +189,46 @@ static long png_write_frame(const char *path)
             raw[o++] = (unsigned char)(px & 0xFF);          
         }
     }
+//had to ask AI to help with compressing the raw image and the char sigs, opening the output file, and to compile a PNG to be sent back to the slackbot, everything was reviewed and tested by me 
+    uLongf zlen = compressBound((uLong)rawlen);
+    unsigned char *zbuf = malloc(zlen);
+    if (!zbuf) {
+        free(raw);
+        return 0;
+    }
+    if (compress2(zbuf, &zlen, raw, (uLong)rawlen, 6) != Z_OK) {
+        free(raw);
+        free(zbuf);
+        return 0;
+    }
+    free(raw);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        free(zbuf);
+        return 0;
+    }
+
+    static const unsigned char sig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+    int ok = fwrite(sig, 1, 8, f) == 8;
+
+    unsigned char ihdr[13];
+    put_be32(ihdr,(uint32_t)w);
+    put_be32(ihdr + 4, (uint32_t)h);
+    ihdr[8] = 8;   
+    ihdr[9] = 2;   
+    ihdr[10] = 0;  
+    ihdr[11] = 0;  
+    ihdr[12] = 0;  
+    ok = ok && png_write_chunk(f, "IHDR", ihdr, sizeof(ihdr));
+    ok = ok && png_write_chunk(f, "IDAT", zbuf, (size_t)zlen);
+    ok = ok && png_write_chunk(f, "IEND", NULL, 0);
+
+    long written = 0;
+    if (ok) {
+        written = ftell(f);
+    }
+    fclose(f);
+    free(zbuf);
+    return ok ? written : 0;
+}
