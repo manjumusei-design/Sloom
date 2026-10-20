@@ -70,3 +70,50 @@ export async function start(config: Config): Promise<RunningApp> {
       });
     }
   });
+
+  app.event("entity_details_requested", async ({ body, event, client }) => {
+		const externalRef = event.external_ref as
+      | { id?: string; type?: string }
+      | undefined;
+		const launchId = externalRef?.id ?? "unknown":
+		const triggerId = 
+		body.trigger_id ?? (event as {trigger_id?: string}).trigger_id;
+
+		if (!triggerId) {
+			log(config, "error", "entity_details_requested missing trigger_id");
+			return;
+		}
+
+		const entityUrl = 
+      (event as { entity_url?: string }).entity_url ??
+      (event as { app_unfurl_url?: string }).app_unfurl_url ??
+      `${config.publicBaseUrl}/doom/${launchId}`;
+
+    try {
+      await client.apiCall("entity.presentDetails", {
+        trigger_id: triggerId,
+        metadata: {
+          entities: [buildDetailsEntity(launchId, entityUrl, config.publicBaseUrl)],
+        },
+      });
+      log(config, "info", "presented details", { launchId });
+    } catch (err) {
+      const code = (err as { data?: { error?: string } })?.data?.error ?? "unknown";
+      log(config, "error", "entity.presentDetails failed", { code });
+    }
+  });
+
+  app.error(async (error) => {
+    log(config, "error", "bolt error", { message: error.message });
+  });
+
+	const web = createWebApp();
+	const server = web.listen(config.port, "0.0.0.0", () => {
+		log(config, "info", 'web listening on 0.0.0.0:${config.port}`);
+	});
+
+	await app.start();
+	log(config, "info", "socket mode is connected");
+
+	return { app, server, web };
+}
