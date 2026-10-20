@@ -29,3 +29,45 @@ export function startEngine(): EngineSession {
     env: { ...process.env, SLOOM_FRAME_PATH: framePath } as NodeJS.ProcessEnv,
     stdio: ["pipe", "pipe", "pipe"],
   });
+
+	proc.on("exit", (code) => {
+		if (session.pending) {
+      session.pending.reject(new Error(`engine exited (code ${code})`));
+      session.pending = null;
+    }
+  });
+
+	return session;
+}
+
+export function sendTurn(
+  session: EngineSession,
+  keys: string[],
+  tics = 8,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (session.pending) {
+      reject(new Error("turn already in flight"));
+      return;
+    }
+    session.pending = { resolve, reject };
+    const cmd = JSON.stringify({ keys, tics }) + "\n";
+    session.process.stdin!.write(cmd, (err) => {
+      if (err) {
+        session.pending = null;
+        reject(err);
+      }
+    });
+  });
+}
+
+export function stopEngine(session: EngineSession): void {
+  try {
+    session.process.stdin!.end();
+  } catch {
+  }
+  try {
+    session.process.kill("SIGTERM");
+  } catch {
+  }
+}
