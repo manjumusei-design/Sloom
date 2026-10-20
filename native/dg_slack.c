@@ -57,3 +57,14 @@ static const slack_keymap_t s_Keymap[] = {
     { NULL, 0 }
 };
 
+static int slack_lookup_key(const char *name, unsigned char * out)
+{
+    for (int i = 0; s_keymap[i].name != NULL; i++) {
+        if (strcmp(s_Keymap[i].name, name) == 0) {
+            *out = s_Keymap[i].code;
+            return 1;
+        }
+    }
+    return 0;
+}
+
