@@ -4,17 +4,17 @@ export const EMBED_MIME_TYPE = "application/vnd.slack-embed";
 export const EXTERNAL_REF_TYPE = "doom_launch";
 
 export interface EntityPayload {
-	attribnutes: {
-		title: { text: string };
-		product_name: string;
-		metadata_last_modified?: number;
-		full_size_preview: {
-			is_supported: true;
-			mime_type: typeof EMBED_MIME_TYPE;
-			preview_url?: string;
-		};
-	};
-	fields: Record<string, unknown>;
+  attributes: {
+    title: { text: string };
+    product_name: string;
+    metadata_last_modified?: number;
+    full_size_preview: {
+      is_supported: true;
+      mime_type: typeof EMBED_MIME_TYPE;
+      preview_url?: string;
+    };
+  };
+  fields: Record<string, unknown>;
 }
 
 export interface Entity {
@@ -25,8 +25,8 @@ export interface Entity {
 }
 
 export function buildCardEntity(
-	launchId: string,
-	publicBaseUrl: string,
+  launchId: string,
+  publicBaseUrl: string,
 ): Entity {
   return {
     url: `${publicBaseUrl}/doom/${launchId}`,
@@ -47,14 +47,14 @@ export function buildCardEntity(
 }
 
 export function buildDetailsEntity(
-	launchId: string,
-	entityUrl: string,
-	publicBaseUrl: string,
+  launchId: string,
+  entityUrl: string,
+  publicBaseUrl: string,
 ): Entity {
   return {
     url: entityUrl,
     external_ref: { id: launchId, type: EXTERNAL_REF_TYPE },
-		entity_type: ENTITY_TYPE,
+    entity_type: ENTITY_TYPE,
     entity_payload: {
       attributes: {
         title: { text: "DOOM" },
