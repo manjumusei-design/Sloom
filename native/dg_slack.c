@@ -1,4 +1,4 @@
-
+//had to ask ai to help me here with the png decode in some areas 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,4 +106,37 @@ int DG_GetKey(int *pressed, unsigned char *doomKey)
 void DG_SetWindowTitle(const char *title)
 {
     (void)title;
+}
+
+
+static uint32_t png_crc_table[256];
+static int png_crc_ready = 0;
+
+static void png_make_crc_table(void)
+{
+    for (uint32_t n = 0; n < 256; n++) {
+        uint32_t c = n;
+        for (int k = 0; k < 8; k++)
+            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1); 
+        png_crc_table[n] = c;
+    }
+    png_crc_ready = 1;
+}
+
+static uint32_t png_crc(const unsigned char *buf, size_t len)
+{
+    if (!png_crc_ready)
+        png_make_crc_table();
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++)
+        c = png_crc_table[(c ^ buf[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
+static void put_be32(unsigned char * p, uint32_t v)
+{
+    p[0] = (unsigned char)(v >> 24);
+    p[1] = (unsigned char)(v >> 16);
+    p[2] = (unsigned char)(v >> 8);
+    p[3] = (unsigned char)v;
 }
