@@ -117,3 +117,29 @@ export async function start(config: Config): Promise<RunningApp> {
 
 	return { app, server, web };
 }
+
+export async function stop(running: RunningApp): Promise<void> {
+	await running.app.stop();
+	await new Promise<void>((resolve) => running.server.close(() => resolve()));
+}
+
+const isMain = 
+  process.argv[1] !== undefined &&
+  import.meta.url === `file://${process.argv[1]}`;
+
+if (isMain){
+	const config = loadConfig();
+  start(config).catch((err: unknown) => {
+    console.error("[sloom] FATAL failed to start:", (err as Error).message);
+    process.exit(1);
+  });
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+		process.on(signal, () => {
+      console.log(`[sloom] ${signal} received, shutting down`);
+			process.exit(0);
+		});
+	}
+}
+
+export {EXTERNAL_REF_TYPE};
