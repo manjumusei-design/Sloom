@@ -140,3 +140,52 @@ static void put_be32(unsigned char * p, uint32_t v)
     p[2] = (unsigned char)(v >> 8);
     p[3] = (unsigned char)v;
 }
+
+static int png_write_chunk(FILE *f, const char *type,
+                           const unsigned char *data, size_t len)
+{
+    unsigned char hdr[8];
+    put_be32(hdr, (uint32_t)len);
+    memcpy(hdr + 4, type, 4);
+    if (fwrite(hdr, 1, 8, f) != 8)
+        return 0;
+    if (len > 0 && fwrite(data, 1, len, f) != len)
+        return 0;
+
+    unsigned char *crcbuf = malloc(len + 4);
+    if (!crcbuf)
+        return 0;
+    memcpy(crcbuf, type, 4);
+    if (len > 0)
+        memcpy(crcbuf + 4, data, len);
+    uint32_t crc = png_crc(crcbuf, len + 4);
+    free(crcbuf);
+
+    unsigned char crcb[4];
+    put_be32(crcb, crc);
+    return fwrite(crcb, 1, 4, f) == 4;
+}
+
+static long png_write_frame(const char *path)
+{
+    const int w = DOOMGENERIC_RESX;
+    const int h = DOOMGENERIC_RESY;
+
+    size_t stride = (size_t)w*3;
+    size_t rawlen = size_t)h * (stride + 1);
+    unsigned char * raw = malloc(rawlen);
+    if (!raw)
+            return 0;
+
+    const uint32_t *src = DG_ScreenBuffer;
+    size_t o = 0;
+    for (int y = 0; y < h; y++) {
+        raw[o++] = 0;  
+        const uint32_t *row = src + (size_t)y * w;
+        for (int x = 0; x < w; x++) {
+            uint32_t px = row[x];
+            raw[o++] = (unsigned char)((px >> 16) & 0xFF);  
+            raw[o++] = (unsigned char)((px >> 8) & 0xFF);   
+            raw[o++] = (unsigned char)(px & 0xFF);          
+        }
+    }
