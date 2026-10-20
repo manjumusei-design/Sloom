@@ -72,3 +72,18 @@ export function createWebApp(options: WebServerOptions = {}): Express {
     }),
   );
 
+  app.get("/", (_req: Request, res: Response) => {
+    res.type("html").send(
+      `<!doctype html><meta charset="utf-8"><title>SLOOM</title>` +
+        `<body style="font:16px system-ui;padding:2rem">` +
+        `<h1>SLOOM</h1><p>Embed endpoint: <code>/embed/doom</code></p>` +
+        `<p>Health: <code>/health</code></p></body>`,
+    );
+  });
+
+  return app;
+}
+
+export function publicDirExists(dir: string): boolean {
+	return existsSync(join(dir,"embed","sloom.html"))
+}
