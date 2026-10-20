@@ -68,3 +68,42 @@ static int slack_lookup_key(const char *name, unsigned char * out)
     return 0;
 }
 
+
+static int s_FrameDrawn = 0;
+
+void DG_Init(void)
+{
+}
+
+void DG_DrawFrame(void)
+{
+    s_FrameDrawn = 1;
+}
+
+void DG_SleepMs(uint32_t ms)
+{
+    (void)ms;
+}
+
+uint32_t DG_GetTicksMs(void)
+{
+    return s_TickCounter++ * SLACK_MS_PER_TICK;
+}
+
+int DG_GetKey(int *pressed, unsigned char *doomKey)
+{
+    if (s_KeyQueueReadIndex == s_KeyQueueWriteIndex)
+        return 0;
+
+    unsigned short keyData = s_KeyQueue[s_KeyQueueReadIndex];
+    s_KeyQueueReadIndex = (s_KeyQueueReadIndex + 1) % KEYQUEUE_SIZE;
+
+    *pressed = keyData >> 8;
+    *doomKey = (unsigned char)(keyData & 0xFF);
+    return 1;
+}
+
+void DG_SetWindowTitle(const char *title)
+{
+    (void)title;
+}
