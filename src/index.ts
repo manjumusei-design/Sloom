@@ -64,20 +64,35 @@ async function postFrame(
   channel: string,
   pngPath: string,
   caption: string,
-): Promise<string> {
-  const buf = await readFile(pngPath);
-  const res = await (client as unknown as {
-    files: { upload: (args: Record<string, unknown>) => Promise<{ ts?: string; file?: { id?: string } }> };
-  }).files.upload({
-    file: buf,
+): Promise<string> { 
+  const st = await (await import("node:fs/promises")).stat(pngPath);
+  const urlRes = await client.files.getUploadURLExternal({
     filename: "frame.png",
-    channels: channel,
-    title: "DOOM frame",z
-    initial_comment: caption,
+    length: st.size,
   });
-  const ts = res.ts ?? "";
-  console.log("[sloom] posted frame:", res.file?.id, ts);
-  return ts;
+  const uploadUrl = urlRes.upload_url;
+  const fileId = urlRest.file_id!;
+  const buf = await readFile(pngPath);
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    body: buf,
+    headers: { "Content-Type": "image/png" },
+  });
+  if (!uploadRes.ok) {
+    throw new Error(`upload failed: ${uploadRes.status}`);
+  }
+
+  await client.files.completeUploadExternal({
+    files: [{ id: fileId, title: "DOOM frame" }],
+    channel_id: channel,
+  });
+
+  const res = await client.chat.postMessage({
+    channel,
+    text: caption,
+  });
+  console.log("Sloom posted the frame:", fileId, res.ts);
+  return res.ts ?? "";
 }
 
 export async function start(config: Config): Promise<RunningApp> {
