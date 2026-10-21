@@ -1,9 +1,7 @@
-
 import "dotenv/config";
 import { App } from "@slack/bolt";
 import { loadConfig, type Config } from "./config.js";
 import { startEngine, sendTurn, stopEngine, type EngineSession } from "./engine.js";
-
 //Asked AI to help me write a log string just for troubleshooting
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
@@ -42,7 +40,27 @@ const KEY_ALIASES: Record<string, string[]> = {
   straferight: ["straferight"],
   sl: ["strafeleft"],
   sr: ["straferight"],
+  map: ["tab"],
+  tab: ["tab"],
 };
+
+const HELP_WORDS = new Set(["help", "?"]);
+const STOP_WORDS = new Set(["stop", "quit"]);
+const START_WORDS = new Set(["start", ""]);
+const TURN_COMMAND = /^turn\s+(-?\d+)$/i;
+
+export function compassDir(angle: number | null): string {
+  if (angle === null) return "";
+  const dirs = ["E", "NE", "N", "SE", "W", "SW", "S", "NW"];
+  const idx = Math.round(angle / 45) % 8;
+  return dirs[idx] ?? "";
+}
+
+export function buildCaption(cmd: string, angle: number | null): string {
+  const dir = compassDir(angle);
+  const dirStr = dir ? ` Facing ${dir} (${angle}°).` : "";
+  return `Sloom — last: ${cmd}.${dirStr} Commands: forward, back, left, right, fire, use, strafeleft, straferight, map. Combine with commas.`;
+}
 
 export function resolveKeys(text: string): string[] | null {
   const t = text.trim().toLowerCase();
@@ -93,44 +111,46 @@ export async function start(config: Config): Promise<RunningApp> {
 		socketMode: true,
 	});
 
-  app.command("/slackdoom-play", async ({ ack, respond, command }) => {
+  app.command("/sloom", async ({ ack, respond, command }) => {
     await ack();
 
-		const text = (command.text ?? "").trim();
-		const channel = command.channel_id;
-		const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
+    const text = (command.text ?? "").trim();
+    const channel = command.channel_id;
+    const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
+
     if (STOP_WORDS.has(text.toLowerCase())) {
-			const sess = sessions.get(channel);
-			if (sess) {
-				stopEngine(sess.engine);
-				sessions.delete(channel);
-				await reply("Game stopped.");
-			} else {
-				await reply("No game running");
-			}
-			return;
-		}
+      const sess = sessions.get(channel);
+      if (sess) {
+        stopEngine(sess.engine);
+        sessions.delete(channel);
+        await reply("Game stopped.");
+      } else {
+        await reply("No game running.");
+      }
+      return;
+    }
 		
 		if(START_WORDS.has(text.toLowerCase())){
 			if (sessions.has(channel)) {
 				await reply("A game is already running. Use '/sloom stop' first.");
 				return;
 			}
-			try {
-				const engine = startEngine();
-				const framePath = await sendTurn(engine, [], OPENING_TICS);
-				const ts = await postFrame(
-					app.client,
-					channel,
-					framePath,
-          "Sloom — type `/sloom forward` to move. Commands: forward, back, left, right, fire, use, strafeleft, straferight. Multi: `forward,fire`.",
+      try {
+        const engine = startEngine();
+        const result = await sendTurn(engine, [], OPENING_TICS);
+        const caption = buildCaption("start", result.angle);
+        await postFrame(
+          app.client,
+          channel,
+          result.framePath,
+          caption,
         );
-				sessions.set((channel, {engine, channel});
-        log(config, "info", "started game", { channel, ts });
+        sessions.set(channel, { engine, channel });
+        log(config, "info", "started game", { channel });
       } catch (err) {
         const msg = (err as Error).message;
         log(config, "error", "start failed", { msg });
-        await reply(`Cannot not start the game: ${msg}`);
+        await reply(`Could not start the game: ${msg}`);
       }
       return;
     }
@@ -147,13 +167,27 @@ export async function start(config: Config): Promise<RunningApp> {
       return;
     }
 
+    if (text.toLowerCase() === "map") {
 		try {
-			const framePath = await sendTurn(sess.engine, keys, 8);
+        const result = await sendTurn(sess.engine, ["map"], 4);
+        const caption = buildCaption("map", result.angle);
+        await postFrame(app.client, channel, result.framePath, caption);
+    } catch (err) {
+      const msg = (err as Error).message;
+      log(config, "error", "mapping failed", {msg});
+        await reply(`Map failed: ${msg}`);
+      }
+      return;
+    }
+
+    try {
+      const result = await sendTurn(sess.engine, keys, TICS_PER_TURN);
+      const caption = buildCaption(text, result.angle);
 			await postFrame(
 				app.client,
-				channel,
-				framePath,
-        `Sloom — last: ${text}. Commands: forward, back, left, right, fire, use, strafeleft, straferight.`,
+        channel,
+        result.framePath,
+        caption,
       );
 		} catch (err) {
 			const msg = (err as Error).message;
