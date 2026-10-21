@@ -3,7 +3,7 @@ import "dotenv/config";
 import { App } from "@slack/bolt";
 import { loadConfig, type Config } from "./config.js";
 import { startEngine, sendTurn, stopEngine, type EngineSession } from "./engine.js";
-import { readFile } from "node:fs/promises";
+
 //Asked AI to help me write a log string just for troubleshooting
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
@@ -17,7 +17,7 @@ export interface RuningApp {
 	app: App;
 }
 
-
+ 
 interface GameSession {
 	engine: EngineSession;
 	channel: string;
@@ -64,34 +64,25 @@ async function postFrame(
   channel: string,
   pngPath: string,
   caption: string,
-): Promise<string> { 
-  const st = await (await import("node:fs/promises")).stat(pngPath);
-  const urlRes = await client.files.getUploadURLExternal({
-    filename: "frame.png",
-    length: st.size,
-  });
-  const uploadUrl = urlRes.upload_url;
-  const fileId = urlRest.file_id!;
-  const buf = await readFile(pngPath);
-  const uploadRes = await fetch(uploadUrl, {
-    method: "POST",
-    body: buf,
-    headers: { "Content-Type": "image/png" },
-  });
-  if (!uploadRes.ok) {
-    throw new Error(`upload failed: ${uploadRes.status}`);
-  }
-
-  await client.files.completeUploadExternal({
-    files: [{ id: fileId, title: "DOOM frame" }],
-    channel_id: channel,
-  });
+): Promise<string> {
+  const imageUrl = await storeFrame(pngPath);
 
   const res = await client.chat.postMessage({
     channel,
     text: caption,
+    blocks: [
+      {
+        type: "image",
+        image_url: imageUrl,
+        alt_text: "DOOM frame",
+      },
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: caption }],
+      },
+    ],
   });
-  console.log("Sloom posted the frame:", fileId, res.ts);
+  console.log("[Sloom] posted frame:", imageUrl, res.ts);
   return res.ts ?? "";
 }
 
