@@ -1,15 +1,9 @@
 
 import "dotenv/config";
-import {App} from "@slack/bolt";
-import type {Express} from "express";
-import type {Server} from "node:http";
+import { App } from "@slack/bolt";
 import { loadConfig, type Config } from "./config.js";
-import {
- buildDetailsEntity,
- buildPostMessageArgs,
- EXTERNAL_REF_TYPE,   
-} from "./work-objects.js";
-import {createWebApp} from "./web.js"
+import { startEngine, sendTurn, stopEngine, type EngineSession } from "./engine.js";
+import { readFile } from "node:fs/promises";
 //Asked AI to help me write a log string just for troubleshooting
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
@@ -19,15 +13,37 @@ function log(config: Config, level: string, msg: string, extra?: unknown): void 
   else console.log(line, extra);
 }
 
-function newLaunchId(): string {
-  return `launch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export interface RuningApp {
 	app: App;
-	server: Server;
-	web: Express;
 }
+
+
+interface GameSession {
+	engine: EngineSession;
+	channel: string;
+}
+
+const sessions = new Map<string, GameSession>();
+
+const KEY_ALIASES: Record<string, string[]> = {
+  forward: ["forward"],
+  w: ["forward"],
+  back: ["back"],
+  s: ["back"],
+  left: ["turnleft"],
+  a: ["turnleft"],
+  right: ["turnright"],
+  d: ["turnright"],
+  fire: ["fire"],
+  space: ["fire"],
+  use: ["use"],
+  e: ["use"],
+  strafeleft: ["strafeleft"],
+  straferight: ["straferight"],
+  sl: ["strafeleft"],
+  sr: ["straferight"],
+};
+
 
 export async function start(config: Config): Promise<RunningApp> {
 	const app = new App({
