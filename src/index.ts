@@ -33,15 +33,18 @@ const KEY_ALIASES: Record<string, string[]> = {
   right: ["turnright"],
   d: ["turnright"],
   fire: ["fire"],
+  f: ["fire"],
   space: ["fire"],
   use: ["use"],
   e: ["use"],
+  u: ["use"],
   strafeleft: ["strafeleft"],
   straferight: ["straferight"],
   sl: ["strafeleft"],
   sr: ["straferight"],
   map: ["tab"],
   tab: ["tab"],
+  m: ["tab"],
 };
 
 const HELP_WORDS = new Set(["help", "?"]);
@@ -161,6 +164,25 @@ export async function start(config: Config): Promise<RunningApp> {
 			return;
 		}
 
+    const turnMatch = text.match(TURN_COMMAND);
+    if (turnMatch && turnMatch[1]) {
+      const deg = parseInt(turnMatch[1], 10);
+      const tics = Math.max(1, Math.round(Math.abs(deg) / DEGREES_PER_TIC));
+      const dir = deg >= 0 ? "turnright" : "turnleft";
+      const keys = [dir];
+      try {
+        const result = await sendTurn(sess.engine, keys, tics);
+        const caption = buildCaption(`turn ${deg}`, result.angle);
+        await postFrame(app.client, channel, result.framePath, caption);
+      } catch (err) {
+        const msg = (err as Error).message;
+        log(config, "error", "turn failed", { msg });
+        await reply(`Turn failed: ${msg}`);
+      }
+      return;
+    }
+
+    
 		const keys = resolveKeys(text);
 		if (!keys) {
       await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight. Combine with commas.`);
