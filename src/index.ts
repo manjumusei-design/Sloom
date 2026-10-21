@@ -137,7 +137,7 @@ export async function start(config: Config): Promise<RunningApp> {
 			}
       try {
         const engine = startEngine();
-        const result = await sendTurn(engine, [], OPENING_TICS);
+        const result = await sendTurn(engine, ["tab"], 1);
         const caption = buildCaption("start", result.angle);
         await postFrame(
           app.client,
