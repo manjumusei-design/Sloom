@@ -8,9 +8,19 @@
 #include "doomkeys.h"
 #include "m_argv.h"
 #include "doomgeneric.h"
+#include "doomstat.h"
+
+
 
 
 #define SLACK_MS_PER_TICK 29
+#define TURN_LINE_MAX 1024
+#define MAX_KEYS_PER_TURN 8
+#define KEY_NAME_MAX 32
+#define ANGLE_UNITS 4294967296ULL
+#define PNG_COMPRESSION_LEVEL 6
+#define PNG_BIT_DEPTH 8
+#define PNG_COLOR_RGB 2
 
 static uint32_t s_TickCounter = 0;
 
@@ -46,6 +56,7 @@ static const slack_keymap_t s_Keymap[] = {
     { "straferight", KEY_STRAFE_R },
     { "fire",     KEY_FIRE },
     { "use",      KEY_USE },
+    { "tab",      KEY_TAB },
     { "enter",    KEY_ENTER },
     { "escape",   KEY_ESCAPE },
     { "yes",      'y' },
@@ -231,4 +242,105 @@ static long png_write_frame(const char *path)
     fclose(f);
     free(zbuf);
     return ok ? written : 0;
+}
+static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_tics)
+{
+    int nkeys = 0;
+    *out_tics = 1;
+
+    const char *k = strstr(line, "\"keys\"");
+    if(k) {
+        const char *p = strchr(k, '[');
+        if(p) {
+            p++;
+            while (*p && *p != ']') {
+                while (*p == ' ' || *p == ',') p++;
+                if (*p != '"') break;
+                p++;
+                int len = 0;
+                while (*p && *p != '"' && len < KEY_NAME_MAX - 1)
+                    keys[nkeys][len++] = *p++;
+                keys[nkeys][len] = '\0';
+                if (*p == '"') p++;
+                if (len > 0 && nkeys < maxkeys) nkeys++;
+            }
+        }
+    }
+
+    const char *t = strstr(line, "\"tics\"");
+    if (t) {
+        const char *p = strchr(t, ':');
+        if (p) {
+            int v = atoi(p+1);
+            if (v>0) * out_tics = v;
+        }
+    }
+    return nkeys;
+}
+
+#define MAX_TICS_PER_TURN 70
+
+int main(int argc, char **argv)
+{
+    const char *framePath = getenv("Sloom_FRAME_PATH");
+    if (framePath == NULL)
+        framePath = "frame.png";
+
+    doomgeneric_Create(argc, argv);
+
+    if (s_FrameDrawn){
+        long n = png_write_frame(framePath);
+        if (n>0) {
+            if (players[consoleplayer].mo != NULL) {
+                unsigned int ang = players[consoleplayer].mo->angle;
+                int deg = (int)((double)ang * 360.0 / (double)ANGLE_UNITS);
+                printf("ANGLE %d\n", deg);
+            }
+        }
+    }
+    fflush(stdout);
+
+
+    char line[TURN_LINE_MAX];
+    while (fgets(line, sizeof(line), stdin) != NULL)
+        char keys[MAX_KEYS_PER_TURN][KEY_NAME_MAX];
+    int tics = 1;
+        int nkeys = parse_turn(line, keys, MAX_KEYS_PER_TURN, &tics);
+        if (tics > MAX_TICS_PER_TURN)
+            tics = MAX_TICS_PER_TURN;
+
+        unsigned char codes[MAX_KEYS_PER_TURN];
+        int ncodes = 0;
+        for (int i = 0; i < nkeys; i++) {
+            unsigned char c;
+            if (slack_lookup_key(keys[i], &c))
+                codes[ncodes++] = c;
+        }
+
+        for (int i = 0; i < ncodes; i++)
+            slack_push_key(1, codes[i]);
+
+        for (int i = 0; i < tics; i++)
+            doomgeneric_Tick();
+
+        for (int i = 0; i < ncodes; i++)
+            slack_push_key(0, codes[i]);
+
+        doomgeneric_Tick();
+        s_FrameDrawn =0;
+        long n = png_write_frame(framePath);
+        if (n>0) {
+            printf("FRAME %s %ld\n", framePath, n);
+            if (players[consoleplayer].mo != NULL) {
+                unsigned int ang = players[consoleplayer].mo->angle;
+                int deg = (int)((double)ang * 360.0 / (double)ANGLE_UNITS);
+                printf("ANGLE %d\n", deg);
+            }
+        } else {
+            printf("FRAME_ERROR %s\n", framePath);
+        }
+        fflush(stdout);
+    }
+
+    return 0;
 }
