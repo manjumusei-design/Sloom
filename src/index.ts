@@ -2,6 +2,8 @@ import "dotenv/config";
 import { App } from "@slack/bolt";
 import { loadConfig, type Config } from "./config.js";
 import { startEngine, sendTurn, stopEngine, type EngineSession } from "./engine.js";
+import { applyOverlay, overlayPathFor } from "./overlay.js";
+import { storeFrame } from "./frame-store.js";
 //Asked AI to help me write a log string just for troubleshooting
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
@@ -141,11 +143,13 @@ export async function start(config: Config): Promise<RunningApp> {
       try {
         const engine = startEngine();
         const result = await sendTurn(engine, ["tab"], 1);
+        const overlayPath = overlayPathFor(result.framePath);
+        await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption("start", result.angle);
         await postFrame(
           app.client,
           channel,
-          result.framePath,
+          overlayPath,
           caption,
         );
         sessions.set(channel, { engine, channel });
@@ -172,8 +176,10 @@ export async function start(config: Config): Promise<RunningApp> {
       const keys = [dir];
       try {
         const result = await sendTurn(sess.engine, keys, tics);
+        const overlayPath = overlayPathFor(result.framePath);
+        await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption(`turn ${deg}`, result.angle);
-        await postFrame(app.client, channel, result.framePath, caption);
+        await postFrame(app.client, channel, overlayPath, caption);
       } catch (err) {
         const msg = (err as Error).message;
         log(config, "error", "turn failed", { msg });
@@ -182,7 +188,7 @@ export async function start(config: Config): Promise<RunningApp> {
       return;
     }
 
-    
+
 		const keys = resolveKeys(text);
 		if (!keys) {
       await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight. Combine with commas.`);
@@ -192,6 +198,8 @@ export async function start(config: Config): Promise<RunningApp> {
     if (text.toLowerCase() === "map") {
 		try {
         const result = await sendTurn(sess.engine, ["map"], 4);
+        const overlayPath = overlayPathFor(result.framePath);
+        await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption("map", result.angle);
         await postFrame(app.client, channel, result.framePath, caption);
     } catch (err) {
@@ -204,11 +212,13 @@ export async function start(config: Config): Promise<RunningApp> {
 
     try {
       const result = await sendTurn(sess.engine, keys, TICS_PER_TURN);
+      const overlayPath = overlayPathFor(result.framePath);
+      await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
       const caption = buildCaption(text, result.angle);
 			await postFrame(
 				app.client,
         channel,
-        result.framePath,
+        overlayPath,
         caption,
       );
 		} catch (err) {
