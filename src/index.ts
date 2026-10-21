@@ -24,6 +24,8 @@ interface GameSession {
 }
 
 const sessions = new Map<string, GameSession>();
+const lastCommandTime = new Map<string, number>();
+const RATE_LIMIT_MS = 5000;
 
 const KEY_ALIASES: Record<string, string[]> = {
   forward: ["forward"],
@@ -123,6 +125,17 @@ export async function start(config: Config): Promise<RunningApp> {
     const channel = command.channel_id;
     const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
 
+    if (!HELP_WORDS.has(text.toLowerCase())){
+      const now = Date.now();
+      const last = lastCommandTime.get(channel) ?? 0;
+      if (now - last <RATE_LIMIT_MS) {
+        const remaining = Math.ceil((RATE_LIMIT_MS - (now - last)) / 1000);
+        await reply(`Please wait ${remaining}s before sending another command.`);
+        return;
+      }
+      lastCommandTime.set(channel, now);
+    }
+
     if (STOP_WORDS.has(text.toLowerCase())) {
       const sess = sessions.get(channel);
       if (sess) {
@@ -142,7 +155,7 @@ export async function start(config: Config): Promise<RunningApp> {
 			}
       try {
         const engine = startEngine();
-        const result = await sendTurn(engine, ["tab"], 1);
+        const result = await sendTurn(engine, [], OPENING_TICS);
         const overlayPath = overlayPathFor(result.framePath);
         await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption("start", result.angle);
