@@ -44,6 +44,41 @@ const KEY_ALIASES: Record<string, string[]> = {
   sr: ["straferight"],
 };
 
+export function resolveKeys(text: string): string[] | null {
+  const t = text.trim().toLowerCase();
+  if (t in KEY_ALIASES) return KEY_ALIASES[t]!;
+  if (t.includes(",")) {
+    const parts = t.split(",").map((p) => p.trim());
+    const keys: string[] = [];
+    for (const p of parts) {
+      if (p in KEY_ALIASES) keys.push(...KEY_ALIASES[p]!);
+      else return null;
+    }
+    return keys.length > 0 ? keys : null;
+  }
+  return null;
+}
+
+async function postFrame(
+  client: App["client"],
+  channel: string,
+  pngPath: string,
+  caption: string,
+): Promise<string> {
+  const buf = await readFile(pngPath);
+  const res = await (client as unknown as {
+    files: { upload: (args: Record<string, unknown>) => Promise<{ ts?: string; file?: { id?: string } }> };
+  }).files.upload({
+    file: buf,
+    filename: "frame.png",
+    channels: channel,
+    title: "DOOM frame",
+    initial_comment: caption,
+  });
+  const ts = res.ts ?? "";
+  console.log("[sloom] posted frame:", res.file?.id, ts);
+  return ts;
+}
 
 export async function start(config: Config): Promise<RunningApp> {
 	const app = new App({
