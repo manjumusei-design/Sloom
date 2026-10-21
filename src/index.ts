@@ -72,7 +72,7 @@ async function postFrame(
     file: buf,
     filename: "frame.png",
     channels: channel,
-    title: "DOOM frame",
+    title: "DOOM frame",z
     initial_comment: caption,
   });
   const ts = res.ts ?? "";
@@ -91,106 +91,68 @@ export async function start(config: Config): Promise<RunningApp> {
     await ack();
 
 		const text = (command.text ?? "").trim();
-		if (text !== "start") {
-			await respond({
-				response_type: "ephemeral",
-        text: "Usage: `/slackdoom-play start`",
-			});
+		const channel = command.channel_id;
+		const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
+    if (STOP_WORDS.has(text.toLowerCase())) {
+			const sess = sessions.get(channel);
+			if (sess) {
+				stopEngine(sess.engine);
+				sessions.delete(channel);
+				await reply("Game stopped.");
+			} else {
+				await reply("No game running");
+			}
+			return;
+		}
+		
+		if(START_WORDS.has(text.toLowerCase())){
+			if (sessions.has(channel)) {
+				await reply("A game is already running. Use '/sloom stop' first.");
+				return;
+			}
+			try {
+				const engine = startEngine();
+				const framePath = await sendTurn(engine, [], OPENING_TICS);
+				const ts = await postFrame(
+					app.client,
+					channel,
+					framePath,
+          "Sloom — type `/sloom forward` to move. Commands: forward, back, left, right, fire, use, strafeleft, straferight. Multi: `forward,fire`.",
+        );
+				sessions.set((channel, {engine, channel});
+        log(config, "info", "started game", { channel, ts });
+      } catch (err) {
+        const msg = (err as Error).message;
+        log(config, "error", "start failed", { msg });
+        await reply(`Cannot not start the game: ${msg}`);
+      }
+      return;
+    }
+
+		const sess = sessions.get(channel);
+		if (!sess) {
+			await reply("No game is running. Start one with '/sloom start'.");
 			return;
 		}
 
-		const launchId = newLaunchId();
-		const args = buildPostMessageArgs(
-			command.channel_id,
-			launchId,
-			config.publicBaseUrl,
-		);
+		const keys = resolveKeys(text);
+		if (!keys) {
+      await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight. Combine with commas.`);
+      return;
+    }
 
 		try {
-			await app.client.chat.postMessage(args);
-			log(config, "info", "posted card", {launchId});
+			const framePath = await sendTurn(sess.engine, keys, 8);
+			await postFrame(
+				app.client,
+				channel,
+				framePath,
+        `Sloom — last: ${text}. Commands: forward, back, left, right, fire, use, strafeleft, straferight.`,
+      );
 		} catch (err) {
-			const code = (err as {data?: {error?: string } })?.data?.error ?? "unknown";
-      log(config, "error", "chat.post Message failed", { code });
-			await respond ({
-				response_type: "ephemeral",
-				text:
-					code === "not_in_channel"
-            ? "I need to be invited to this channel before I can post. Use `/invite @sloom`."
-            : "Could not launch the DOOM card. Check logs.",
-      });
-    }
-  });
-
-  app.event("entity_details_requested", async ({ body, event, client }) => {
-		const externalRef = event.external_ref as
-      | { id?: string; type?: string }
-      | undefined;
-		const launchId = externalRef?.id ?? "unknown":
-		const triggerId = 
-		body.trigger_id ?? (event as {trigger_id?: string}).trigger_id;
-
-		if (!triggerId) {
-			log(config, "error", "entity_details_requested missing trigger_id");
-			return;
+			const msg = (err as Error).message;
+			log(config, "error", "turn failed", {msg});
+			await reply('Turn failed: ${msg}');
 		}
-
-		const entityUrl = 
-      (event as { entity_url?: string }).entity_url ??
-      (event as { app_unfurl_url?: string }).app_unfurl_url ??
-      `${config.publicBaseUrl}/doom/${launchId}`;
-
-    try {
-      await client.apiCall("entity.presentDetails", {
-        trigger_id: triggerId,
-        metadata: {
-          entities: [buildDetailsEntity(launchId, entityUrl, config.publicBaseUrl)],
-        },
-      });
-      log(config, "info", "presented details", { launchId });
-    } catch (err) {
-      const code = (err as { data?: { error?: string } })?.data?.error ?? "unknown";
-      log(config, "error", "entity.presentDetails failed", { code });
-    }
   });
 
-  app.error(async (error) => {
-    log(config, "error", "bolt error", { message: error.message });
-  });
-
-	const web = createWebApp();
-	const server = web.listen(config.port, "0.0.0.0", () => {
-		log(config, "info", 'web listening on 0.0.0.0:${config.port}`);
-	});
-
-	await app.start();
-	log(config, "info", "socket mode is connected");
-
-	return { app, server, web };
-}
-
-export async function stop(running: RunningApp): Promise<void> {
-	await running.app.stop();
-	await new Promise<void>((resolve) => running.server.close(() => resolve()));
-}
-
-const isMain = 
-  process.argv[1] !== undefined &&
-  import.meta.url === `file://${process.argv[1]}`;
-
-if (isMain){
-	const config = loadConfig();
-  start(config).catch((err: unknown) => {
-    console.error("[sloom] FATAL failed to start:", (err as Error).message);
-    process.exit(1);
-  });
-
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-		process.on(signal, () => {
-      console.log(`[sloom] ${signal} received, shutting down`);
-			process.exit(0);
-		});
-	}
-}
-
-export {EXTERNAL_REF_TYPE};
