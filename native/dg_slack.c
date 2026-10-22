@@ -82,7 +82,7 @@ static int slack_lookup_key(const char *name, unsigned char * out)
 
 
 static int s_FrameDrawn = 0;
-
+static const char *s_FramePath = "frame.png";
 void DG_Init(void)
 {
 }
@@ -244,6 +244,34 @@ static long png_write_frame(const char *path)
     free(zbuf);
     return ok ? written : 0;
 }
+
+
+static void slack_emit_state(void)
+{
+    player_t *p = &players[consoleplayer];
+
+    if (p->mo != NULL) {
+        unsigned int ang = p->mo->angle;
+        int deg = (int)((double)ang * 360.0 / (double)ANGLE_UNITS);
+        printf("ANGLE %d\n", deg);
+    }
+    printf("HEALTH %d\n", p->health);
+    printf("DEAD %d\n", p->playerstate == PST_DEAD ? 1 : 0);
+    printf("STATS %d %d\n", p->killcount, totalkills);
+}
+
+static void slack_emit_frame(void)
+{
+    s_FrameDrawn = 0;
+    long n = png_write_frame(s_FramePath);
+    if (n > 0) {
+        slack_emit_state();
+        printf("FRAME %s %ld\n", s_FramePath, n);
+    } else {
+        printf("FRAME_ERROR %s\n", s_FramePath);
+    }
+}
+
 static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_tics)
 {
     int nkeys = 0;
@@ -351,21 +379,13 @@ static int slack_focus(int *out_deg, int *out_blocks)
 int main(int argc, char **argv)
 {
     const char *framePath = getenv("Sloom_FRAME_PATH");
-    if (framePath == NULL)
-        framePath = "frame.png";
+    if (framePath != NULL)
+        s_FramePath = framePath;
 
     doomgeneric_Create(argc, argv);
 
-    if (s_FrameDrawn){
-        long n = png_write_frame(framePath);
-        if (n>0) {
-            if (players[consoleplayer].mo != NULL) {
-                unsigned int ang = players[consoleplayer].mo->angle;
-                int deg = (int)((double)ang * 360.0 / (double)ANGLE_UNITS);
-                printf("ANGLE %d\n", deg);
-            }
-        }
-    }
+    if (s_FrameDrawn)
+        slack_emit_frame();
     fflush(stdout);
 
 
@@ -418,18 +438,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < (have_map ? 2 : 0); i++)
         doomgeneric_Tick();
 
-        s_FrameDrawn =0;
-        long n = png_write_frame(framePath);
-        if (n>0) {
-            printf("FRAME %s %ld\n", framePath, n);
-            if (players[consoleplayer].mo != NULL) {
-                unsigned int ang = players[consoleplayer].mo->angle;
-                int deg = (int)((double)ang * 360.0 / (double)ANGLE_UNITS);
-                printf("ANGLE %d\n", deg);
-            }
-        } else {
-            printf("FRAME_ERROR %s\n", framePath);
-        }
+        slack_emit_frame();
         fflush(stdout);
     }
 
