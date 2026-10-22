@@ -46,6 +46,41 @@ interface ButtonDef {
   label: string;
 }
 
+const BLOCK_RETRY_DELAYS_MS = [400, 1200, 3000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function frameBlocks(
+  imageUrl: string,
+  caption: string,
+): KnownBlock[] {
+  const blocks: KnownBlock[] = [
+    {
+      type: "image",
+      image_url: imageUrl,
+      alt_text: "DOOM frame",
+    },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: caption }],
+    },
+  ];
+  if (buttons.length > 0) {
+    blocks.push({
+      type: "actions",
+      elements: buttons.map((b) => ({
+        type: "button",
+        text: { type: "plain_text", text: b.label },
+        action_id: b.action_id,
+      })),
+    });
+  }
+  return blocks;
+}
+
+
 const ACTION_PREFIX = "sloom:";
 
 const FRAME_BUTTONS: ButtonDef[] = [
