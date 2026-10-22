@@ -13,6 +13,7 @@
 
 #include "p.localh"
 #include "p_mobj.h"
+#include "am_map.h"
 #define SLACK_MS_PER_TICK 29
 #define TURN_LINE_MAX 1024
 #define MAX_KEYS_PER_TURN 8
@@ -282,6 +283,23 @@ static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_t
 
 #define FOCUS_RANGE (MELEERANGE + 20 * 64 * FRACUNIT)
 
+extern boolean autopactive;
+extern void AM_Start(void);
+extern boolean viewactive;
+
+static void slack_toggle_automap(void)
+{
+    if (gamestate != GS_LEVEL || players[consoleplayer].mo == NULL)
+        return;
+    if (!automapactive) {
+        AM_Start();
+        viewactive = false;
+    } else {
+        AM_Stop();
+        viewactive = true;
+    }
+}
+
 static angle_t slack_deg_to_angle(int deg)
 {
     int norm = ((deg % 360) + 360) % 360;
@@ -362,10 +380,15 @@ int main(int argc, char **argv)
         unsigned char codes[MAX_KEYS_PER_TURN];
         int ncodes = 0;
         int have_focus = 0;
+        int have_map = 0;
         for (int i = 0; i < nkeys; i++) {
             unsigned char c;
             if (strcmp(keys[i], "focus") == 0) {
                 have_focus = 1;
+                continue;
+            }
+            if (strcmp(keys[i], "map") == 0) {
+                have_map = 1;
                 continue;
             }
             if (slack_lookup_key(keys[i], &c))
@@ -378,6 +401,11 @@ int main(int argc, char **argv)
             else
                 printf("FOCUS -1 0\n");
         }
+
+        if (have_map) {
+            slack_toggle_automap();
+        }
+
         for (int i = 0; i < ncodes; i++)
             slack_push_key(1, codes[i]);
 
@@ -386,8 +414,10 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < ncodes; i++)
             slack_push_key(0, codes[i]);
-
         doomgeneric_Tick();
+        for (int i = 0; i < (have_map ? 2 : 0); i++)
+        doomgeneric_Tick();
+
         s_FrameDrawn =0;
         long n = png_write_frame(framePath);
         if (n>0) {
