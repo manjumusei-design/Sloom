@@ -1,10 +1,22 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
 import { loadConfig, type Config } from "./config.js";
-import { startEngine, sendTurn, stopEngine, type EngineSession } from "./engine.js";
+import {
+  startEngine,
+  sendTurn,
+  stopEngine,
+  DEGREES_PER_TIC,
+  TICS_PER_TURN,
+  TURN_IN_FLIGHT,
+  type EngineSession,
+  type TurnResult,
+} from "./engine.js";
 import { applyOverlay, overlayPathFor } from "./overlay.js";
 import { storeFrame } from "./frame-store.js";
-//Asked AI to help me write a log string just for troubleshooting
+import type { KnownBlock } from "@slack/types";
+import { applyOverlay, overlayPathFor } from "./overlay.js";
+import { storeFrame } from "./frame-store.js";
+//Asked AI to help me write log strings just for troubleshooting
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
   if (order.indexOf(level) < order.indexOf(config.logLevel)) return;
@@ -22,10 +34,27 @@ interface GameSession {
 	engine: EngineSession;
 	channel: string;
 }
-
 const sessions = new Map<string, GameSession>();
+const lastButtonTime  = new Map<string, number>();
 const lastCommandTime = new Map<string, number>();
 const RATE_LIMIT_MS = 5000;
+const BUTTON_COOLDOWN_MS = 1200;
+const OPENING_TICS = 1;
+
+interface ButtonDef {
+  action_id: string;
+  label: string;
+}
+const FRAME_BUTTONS: ButtonDef[] = [
+  { action_id: "doom:forward", label: "Forwards" },
+  { action_id: "doom:back", label: "Backwards" },
+  { action_id: "doom:left", label: "Left" },
+  { action_id: "doom:right", label: "Right" },
+  { action_id: "doom:fire", label: "Fire" },
+  { action_id: "doom:focus", label: "Focus" },
+  { action_id: "doom:use", label: "Use" },
+  { action_id: "doom:map", label: "Map" },
+];
 
 const KEY_ALIASES: Record<string, string[]> = {
   forward: ["forward"],
@@ -96,30 +125,77 @@ export function resolveKeys(text: string): string[] | null {
   return null;
 }
 
+type Responder = (payload: {
+  response_type?: "in_channel" | "ephemeral";
+  text: string;
+}) => Promise<unknown>;
+
+async function runGameTurn(
+  client: App["client"],
+  channel: string,
+  cmd: string,
+  keys: string[],
+  respond: Responder,
+): Promise<void> {}
+  const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
+  const sess = sessions.get(channel);
+  if (!sess) {
+    await reply("No game running. Start one with `/sloom start`.");
+    return;
+  }
+  try {
+    const result: TurnResult = await sendTurn(sess.engine, keys, TICS_PER_TURN);
+    const overlayPath = overlayPathFor(result.framePath);
+    await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
+    const caption = buildCaption(cmd, result.angle, result.focus);
+    await postFrame(client, channel, overlayPath, caption, FRAME_BUTTONS);
+  } catch (err) {
+    const msg = (err as Error).message;
+    const text = msg.includes(TURN_IN_FLIGHT)
+      ? "Wait for frame to load."
+      : `Failed: ${msg}`;
+    await reply(text);
+  }
+}
+
+
 async function postFrame(
   client: App["client"],
   channel: string,
   pngPath: string,
   caption: string,
+  buttons?: ButtonDef[],
 ): Promise<string> {
   const imageUrl = await storeFrame(pngPath);
 
-  const res = await client.chat.postMessage({
-    channel,
-    text: caption,
-    blocks: [
-      {
+  const blocks: KnownBlock[] = [
+    {
         type: "image",
         image_url: imageUrl,
         alt_text: "DOOM frame",
       },
       {
-        type: "context",
-        elements: [{ type: "mrkdwn", text: caption }],
-      },
-    ],
+      type: "context",
+      elements: [{ type: "mrkdwn", text: caption }],
+    },
+  ];
+  if (buttons && buttons.length > 0) {
+    blocks.push({
+      type: "actions",
+      elements: buttons.map((b) => ({
+        type: "button",
+        text: { type: "plain_text", text: b.label,},
+        action_id: b.action_id,
+      })),
+    });
+  }
+
+  const res = await client.chat.postMessage({
+    channel,
+    text: caption,
+    blocks,
   });
-  console.log("[Sloom] posted frame:", imageUrl, res.ts);
+  console.log("Sloom posted frame:", imageUrl, res.ts);
   return res.ts ?? "";
 }
 
@@ -169,7 +245,7 @@ export async function start(config: Config): Promise<RunningApp> {
           "`m` / `map` — toggle automap",
           "`focus` — snap aim to the nearest enemy in sight",
           "",
-          "*Fine-Tuned Turning*",
+          "*Fine-Tuned Turning*", // This is for the sweats
           "`turn 90` — turn right 90°",
           "`turn -90` — turn left 90°",
           "`turn 45` — turn right 45°",
@@ -209,6 +285,7 @@ export async function start(config: Config): Promise<RunningApp> {
           channel,
           overlayPath,
           caption,
+          FRAME_BUTTONS,
         );
         sessions.set(channel, { engine, channel });
         log(config, "info", "started game", { channel });
@@ -237,7 +314,7 @@ export async function start(config: Config): Promise<RunningApp> {
         const overlayPath = overlayPathFor(result.framePath);
         await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption(`turn ${deg}`, result.angle);
-        await postFrame(app.client, channel, overlayPath, caption);
+        await postFrame(app.client, channel, overlayPath, caption, FRAME_BUTTONS);
       } catch (err) {
         const msg = (err as Error).message;
         log(config, "error", "turn failed", { msg });
@@ -253,39 +330,36 @@ export async function start(config: Config): Promise<RunningApp> {
       return;
     }
 
-    if (text.toLowerCase() === "map") {
-		try {
-        const result = await sendTurn(sess.engine, ["map"], 4);
-        const overlayPath = overlayPathFor(result.framePath);
-        await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
-        const caption = buildCaption("map", result.angle);
-        await postFrame(app.client, channel, result.framePath, caption);
-    } catch (err) {
-      const msg = (err as Error).message;
-      log(config, "error", "mapping failed", {msg});
-        await reply(`Map failed: ${msg}`);
-      }
+    await runGameTurn(app.client, channel, text, keys, respond);
+  });
+
+  app.action(new RegExp(`^${ACTION_PREFIX}`), async ({ ack, respond, body, action }) => {
+    await ack();
+
+    const channel = (body as { channel?: { id?: string } }).channel?.id;
+    const actionId = (action as { action_id: string }).action_id;
+    const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
+    const cmd = actionId.slice(ACTION_PREFIX.length);
+
+    if (!channel || !cmd) {
+      await reply("Could not read that button.");
       return;
     }
 
-    try {
-      const result = await sendTurn(sess.engine, keys, TICS_PER_TURN);
-      const overlayPath = overlayPathFor(result.framePath);
-      await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
-      const caption = buildCaption(text, result.angle, result.focus);
-			await postFrame(
-				app.client,
-        channel,
-        overlayPath,
-        caption,
-      );
-		} catch (err) {
-			const msg = (err as Error).message;
-			log(config, "error", "turn failed", {msg});
-			await reply('Turn failed: ${msg}');
-		}
-  });
+    const now = Date.now();
+    const last = lastButtonTime.get(channel) ?? 0;
+    if (now - last < BUTTON_COOLDOWN_MS) {
+      return;
+    }
+    lastButtonTime.set(channel, now);
 
+    const keys = resolveKeys(cmd);
+    if (!keys) {
+      await reply(`Unknown button: ${cmd}`);
+      return;
+    }
+    await runGameTurn(app.client, channel, cmd, keys, respond);
+  });
   app.error(async (error) => {
     log(config, "error", "bolt error", { message: error.message });
   });
