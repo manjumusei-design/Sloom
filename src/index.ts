@@ -45,17 +45,21 @@ interface ButtonDef {
   action_id: string;
   label: string;
 }
+
+const ACTION_PREFIX = "sloom:";
+
 const FRAME_BUTTONS: ButtonDef[] = [
-  { action_id: "doom:forward", label: "Forwards" },
-  { action_id: "doom:back", label: "Backwards" },
-  { action_id: "doom:left", label: "Left" },
-  { action_id: "doom:right", label: "Right" },
-  { action_id: "doom:fire", label: "Fire" },
-  { action_id: "doom:aimfire", label: "Aim+Fire" },
-  { action_id: "doom:focus", label: "Focus" },
-  { action_id: "doom:use", label: "Use" },
-  { action_id: "doom:map", label: "Map" },
+  { action_id: `${ACTION_PREFIX}forward`, label: "Forward" },
+  { action_id: `${ACTION_PREFIX}back`, label: "Back" },
+  { action_id: `${ACTION_PREFIX}left`, label: "Left" },
+  { action_id: `${ACTION_PREFIX}right`, label: "Right" },
+  { action_id: `${ACTION_PREFIX}fire`, label: "Fire" },
+  { action_id: `${ACTION_PREFIX}focusfire`, label: "Focus+Fire" },
+  { action_id: `${ACTION_PREFIX}focus`, label: "Focus" },
+  { action_id: `${ACTION_PREFIX}use`, label: "Use" },
+  { action_id: `${ACTION_PREFIX}map`, label: "Map" },
 ];
+
 
 const KEY_ALIASES: Record<string, string[]> = {
   forward: ["forward"],
@@ -76,10 +80,11 @@ const KEY_ALIASES: Record<string, string[]> = {
   straferight: ["straferight"],
   sl: ["strafeleft"],
   sr: ["straferight"],
-  map: ["tab"],
-  tab: ["tab"],
-  m: ["tab"],
+  map: ["map"],
+  tab: ["map"],
+  m: ["map"],
   focus: ["focus"],
+  focusfire: ["focus", "fire"],
   aimfire: ["focus", "fire"],
 };
 
@@ -247,7 +252,7 @@ export async function start(config: Config): Promise<RunningApp> {
           "`m` / `map` — toggle automap",
           "`focus` — snap aim to the nearest enemy in sight",
           "",
-          "*Fine-Tuned Turning*", // This is for the sweats
+          "*Fine-Tuned Turning*", // This is for the sweats but I dont think it will be widely used at all
           "`turn 90` — turn right 90°",
           "`turn -90` — turn left 90°",
           "`turn 45` — turn right 45°",
@@ -257,8 +262,9 @@ export async function start(config: Config): Promise<RunningApp> {
           "`focus,fire` — lock on and shoot",
           "",
           "*Buttons*",
-          "Every frame has one-tap buttons that you can react to such as (Forward / Back / Left / Right / Fire / Aim+Fire / Focus / Use / Map).",
+          "Every frame has one-tap buttons that you can react to such as (Forward / Back / Left / Right / Fire / Focus+Fire / Focus / Use / Map).",
           "Clicking will send a new frame that you can continue off of.",
+          "Map toggles: Click to open and then click again to close.",
         ].join("\n"));
       return;
     }
