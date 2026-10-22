@@ -33,13 +33,14 @@ export interface RuningApp {
 interface GameSession {
 	engine: EngineSession;
 	channel: string;
+  dead: boolean;
 }
 const sessions = new Map<string, GameSession>();
 const lastButtonTime  = new Map<string, number>();
 const lastCommandTime = new Map<string, number>();
 const RATE_LIMIT_MS = 5000;
 const BUTTON_DEBOUNCE_MS = 250;
-const OPENING_TICS = 1;
+
 
 export interface ButtonDef {
   action_id: string;
@@ -144,6 +145,9 @@ export const FRAME_BUTTON_ROWS: ButtonDef[][] = [
 ];
 export const FRAME_BUTTONS: ButtonDef[] = FRAME_BUTTON_ROWS.flat();
 
+export const RESTART_BUTTON_ROWS: ButtonDef[][] = [
+  [{ action_id: `${ACTION_PREFIX}restart`, label: "Restart" }],
+];
 
 const KEY_ALIASES: Record<string, string[]> = {
   forward: ["forward"],
@@ -170,6 +174,7 @@ const KEY_ALIASES: Record<string, string[]> = {
   focus: ["focus"],
   focusfire: ["focus", "fire"],
   aimfire: ["focus", "fire"],
+  restart: ["use"],
 };
 
 const HELP_WORDS = new Set(["help", "?"]);
@@ -183,7 +188,6 @@ export function compassDir(angle: number | null): string {
   const idx = Math.round(angle / 45) % 8;
   return dirs[idx] ?? "";
 }
-
 export function focusNote(focus: { deg: number; blocks: number } | null): string {
   if (!focus) return "";
   if (focus.deg === -1 && focus.blocks === 0) return " No target in sight.";
@@ -191,13 +195,31 @@ export function focusNote(focus: { deg: number; blocks: number } | null): string
   return ` Target locked ${Math.abs(focus.deg)}° ${focus.deg > 0 ? "right" : "left"}, ~${focus.blocks} tiles away.`;
 }
 
+export interface DeathInfo {
+  health: number | null;
+  kills: number | null;
+  totalKills: number | null;
+}
+export function deathNote(death: DeathInfo | null): string {
+  if (!death) return "";
+  let note = " You died.";
+  if (death.kills !== null && death.totalKills !== null && death.totalKills > 0) {
+    note += ` Kills: ${death.kills} of ${death.totalKills}.`;
+  }
+  return note;
+}
+
 export function buildCaption(
   cmd: string,
   angle: number | null,
   focus: { deg: number; blocks: number } | null = null,
+  death: DeathInfo | null = null,
 ): string {
   const dir = compassDir(angle);
   const dirStr = dir ? ` Facing ${dir} (${angle}°).` : "";
+  if (death) {
+    return `Sloom — last: ${cmd}.${dirStr}${deathNote(death)} Buttons: restart.`;
+  }
   return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)} Buttons: forward, back, left, right, fire, use, strafeleft, straferight, map, focus.`;
 }
 
@@ -235,12 +257,26 @@ async function runGameTurn(
     await reply("No game running. Start one with `/sloom start`.");
     return;
   }
+  if (cmd === "restart" && !sess.dead) {
+    await reply("You are not dead. Keep going.");
+    return;
+  }
   try {
-    const result: TurnResult = await sendTurn(sess.engine, keys, TICS_PER_TURN);
+    const result: TurnResult = await sendTurn(sess.engine, keys, tics);
+    sess.dead = result.dead;
     const overlayPath = overlayPathFor(result.framePath);
     await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
-    const caption = buildCaption(cmd, result.angle, result.focus);
-    await postFrame(client, channel, overlayPath, caption, FRAME_BUTTON_ROWS);
+    const death = result.dead
+      ? { health: result.health, kills: result.kills, totalKills: result.totalKills }
+      : null;
+    const caption = buildCaption(cmd, result.angle, result.focus, death);
+    await postFrame(
+      client,
+      channel,
+      overlayPath,
+      caption,
+      result.dead ? RESTART_BUTTON_ROWS : FRAME_BUTTON_ROWS,
+    );
   } catch (err) {
     const msg = (err as Error).message;
     console.log("Sloom ERROR turn failed", { cmd, msg });
@@ -337,6 +373,7 @@ export async function start(config: Config): Promise<RunningApp> {
           "`d` / `right` — Turn right",
           "`sl` / `strafeleft` — Strafe left",
           "`sr` / `straferight` — Strafe right",
+          "`restart` — restart the level after you die",
           "",
           "*Action*",
           "`f` / `fire` — shoot",
@@ -381,7 +418,7 @@ export async function start(config: Config): Promise<RunningApp> {
       try {
         const engine = startEngine();
         const result = await sendTurn(engine, [], OPENING_TICS);
-        const overlayPath = overlayPathFor(result.framePath);
+        const result = await engine.ready;
         await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption("start", result.angle);
         await postFrame(
@@ -391,7 +428,7 @@ export async function start(config: Config): Promise<RunningApp> {
           caption,
           FRAME_BUTTON_ROWS,
         );
-        sessions.set(channel, { engine, channel });
+        sessions.set(channel, { engine, channel, dead: result.dead });
         log(config, "info", "started game", { channel });
       } catch (err) {
         const msg = (err as Error).message;
