@@ -39,3 +39,10 @@ export default {
     },
 };
 
+function isPng(bytes) {
+    for (let i =0; i < SIGNATURE.length; i++) {
+        if (bytes[i] !== SIGNATURE[i]) return false;
+    }
+    return true;
+}
+
