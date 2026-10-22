@@ -11,8 +11,8 @@
 #include "doomstat.h"
 
 
-
-
+#include "p.localh"
+#include "p_mobj.h"
 #define SLACK_MS_PER_TICK 29
 #define TURN_LINE_MAX 1024
 #define MAX_KEYS_PER_TURN 8
@@ -278,6 +278,56 @@ static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_t
     return nkeys;
 }
 
+
+
+#define FOCUS_RANGE (MELEERANGE + 20 * 64 * FRACUNIT)
+
+static angle_t slack_deg_to_angle(int deg)
+{
+    int norm = ((deg % 360) + 360) % 360;
+    return (angle_t)((unsigned long long)norm * ANGLE_UNITS /360ULL);
+}
+
+static int slack_focus(int *out_deg, int *out_blocks)
+{
+    mobj_t *mo = players[consoleplayer].mo;
+    if (mo == NULL)
+        return 0;
+
+        angle_t start = mo->angle;
+        mobj_t *best = NULL;
+        int best_deg = 0;
+
+    for (int pass = 0; pass < 2 && best == NULL; pass++) {
+        for (int r = 0; r <= 180 && best == NULL; r++) {
+            for (int sgn = 1; sgn >= -1; sgn -= 2) {
+                int d = (r == 0 && sgn == -1) ? 0 : sgn * r;
+                angle_t a = start + slack_deg_to_angle(d);
+                P_AimLineAttack(mo, a, FOCUS_RANGE);
+                if (linetarget == NULL || linetarget == mo)
+                    continue;
+                boolean iskill = (linetarget->flags & MF_COUNTKILL) != 0;
+                if (pass == 0 && !iskill)
+                    continue;
+                *out_deg = d;
+                fixed_t dx = mo->x - linetarget->x;
+                fixed_t dy = mo->y - linetarget->y;
+                *out_blocks = (int)(P_AproxDistance(dx, dy) >> (FRACBITS + 6));
+                best = linetarget;
+                best_deg = d;
+                break;
+            }
+        }
+    }
+    if (best == NULL)
+        return 0;
+
+
+        mo->angle = start + slack_deg_to_angle(best_deg);
+        return 1;
+}
+
+
 #define MAX_TICS_PER_TURN 70
 
 int main(int argc, char **argv)
@@ -311,12 +361,23 @@ int main(int argc, char **argv)
 
         unsigned char codes[MAX_KEYS_PER_TURN];
         int ncodes = 0;
+        int have_focus = 0;
         for (int i = 0; i < nkeys; i++) {
             unsigned char c;
+            if (strcmp(keys[i], "focus") == 0) {
+                have_focus = 1;
+                continue;
+            }
             if (slack_lookup_key(keys[i], &c))
                 codes[ncodes++] = c;
         }
-
+        if (have_focus) {
+            int fdeg = -1, fblocks = 0;
+            if (slack_focus(&fdeg, &fblocks))
+                printf("FOCUS %d %d\n", fdeg, fblocks);
+            else
+                printf("FOCUS -1 0\n");
+        }
         for (int i = 0; i < ncodes; i++)
             slack_push_key(1, codes[i]);
 
