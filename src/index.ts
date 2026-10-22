@@ -55,6 +55,7 @@ function sleep(ms: number): Promise<void> {
 export function frameBlocks(
   imageUrl: string,
   caption: string,
+  rows: ButtonDef[][] = [],
 ): KnownBlock[] {
   const blocks: KnownBlock[] = [
     {
@@ -67,10 +68,11 @@ export function frameBlocks(
       elements: [{ type: "mrkdwn", text: caption }],
     },
   ];
-  if (buttons.length > 0) {
+  for (const row of rows) {
+    if (row.length === 0) continue;
     blocks.push({
       type: "actions",
-      elements: buttons.map((b) => ({
+      elements: row.map((b) => ({
         type: "button",
         text: { type: "plain_text", text: b.label },
         action_id: b.action_id,
@@ -121,19 +123,26 @@ export function scheduleTurn(channel: string, task: () => Promise<void>): boolea
   return true;
 }
 
-const FRAME_BUTTONS: ButtonDef[] = [
-  { action_id: `${ACTION_PREFIX}forward`, label: "Forward" },
-  { action_id: `${ACTION_PREFIX}back`, label: "Back" },
-  { action_id: `${ACTION_PREFIX}left`, label: "Left" },
-  { action_id: `${ACTION_PREFIX}right`, label: "Right" },
-  { action_id: `${ACTION_PREFIX}strafeleft`, label: "Strafe Left" },
-  { action_id: `${ACTION_PREFIX}straferight`, label: "Strafe Right" },
-  { action_id: `${ACTION_PREFIX}fire`, label: "Fire" },
-  { action_id: `${ACTION_PREFIX}focusfire`, label: "Focus+Fire" },
-  { action_id: `${ACTION_PREFIX}focus`, label: "Focus" },
-  { action_id: `${ACTION_PREFIX}use`, label: "Use" },
-  { action_id: `${ACTION_PREFIX}map`, label: "Map" },
+export const FRAME_BUTTON_ROWS: ButtonDef[][] = [
+  [
+    { action_id: `${ACTION_PREFIX}forward`, label: "Forward" },
+    { action_id: `${ACTION_PREFIX}back`, label: "Back" },
+    { action_id: `${ACTION_PREFIX}left`, label: "Left" },
+    { action_id: `${ACTION_PREFIX}right`, label: "Right" },
+  ],
+  [
+    { action_id: `${ACTION_PREFIX}strafeleft`, label: "Strafe Left" },
+    { action_id: `${ACTION_PREFIX}straferight`, label: "Strafe Right" },
+    { action_id: `${ACTION_PREFIX}fire`, label: "Fire" },
+    { action_id: `${ACTION_PREFIX}focusfire`, label: "Focus+Fire" },
+  ],
+  [
+    { action_id: `${ACTION_PREFIX}focus`, label: "Focus" },
+    { action_id: `${ACTION_PREFIX}use`, label: "Use" },
+    { action_id: `${ACTION_PREFIX}map`, label: "Map" },
+  ],
 ];
+export const FRAME_BUTTONS: ButtonDef[] = FRAME_BUTTON_ROWS.flat();
 
 
 const KEY_ALIASES: Record<string, string[]> = {
@@ -231,7 +240,7 @@ async function runGameTurn(
     const overlayPath = overlayPathFor(result.framePath);
     await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
     const caption = buildCaption(cmd, result.angle, result.focus);
-    await postFrame(client, channel, overlayPath, caption, FRAME_BUTTONS);
+    await postFrame(client, channel, overlayPath, caption, FRAME_BUTTON_ROWS);
   } catch (err) {
     const msg = (err as Error).message;
     console.log("Sloom ERROR turn failed", { cmd, msg });
@@ -248,11 +257,12 @@ export async function postFrame(
   channel: string,
   pngPath: string,
   caption: string,
-  buttons?: ButtonDef[],
+  rows?: ButtonDef[][],
 ): Promise<string> {
   let imageUrl = await storeFrame(pngPath);
 
   for (let attempt = 0; ; attempt++) {
+    const blocks = frameBlocks(imageUrl, caption, rows);
     try {
       const res = await client.chat.postMessage({
         channel,
@@ -379,7 +389,7 @@ export async function start(config: Config): Promise<RunningApp> {
           channel,
           overlayPath,
           caption,
-          FRAME_BUTTONS,
+          FRAME_BUTTON_ROWS,
         );
         sessions.set(channel, { engine, channel });
         log(config, "info", "started game", { channel });
