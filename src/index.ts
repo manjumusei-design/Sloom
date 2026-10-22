@@ -51,6 +51,7 @@ const FRAME_BUTTONS: ButtonDef[] = [
   { action_id: "doom:left", label: "Left" },
   { action_id: "doom:right", label: "Right" },
   { action_id: "doom:fire", label: "Fire" },
+  { action_id: "doom:aimfire", label: "Aim+Fire" },
   { action_id: "doom:focus", label: "Focus" },
   { action_id: "doom:use", label: "Use" },
   { action_id: "doom:map", label: "Map" },
@@ -79,6 +80,7 @@ const KEY_ALIASES: Record<string, string[]> = {
   tab: ["tab"],
   m: ["tab"],
   focus: ["focus"],
+  aimfire: ["focus", "fire"],
 };
 
 const HELP_WORDS = new Set(["help", "?"]);
@@ -253,6 +255,10 @@ export async function start(config: Config): Promise<RunningApp> {
           "*Combos* (comma-separated)",
           "`w,fire` — move and shoot in one turn",
           "`focus,fire` — lock on and shoot",
+          "",
+          "*Buttons*",
+          "Every frame has one-tap buttons that you can react to such as (Forward / Back / Left / Right / Fire / Aim+Fire / Focus / Use / Map).",
+          "Clicking will send a new frame that you can continue off of.",
         ].join("\n"));
       return;
     }
