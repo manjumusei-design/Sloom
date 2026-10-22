@@ -1,8 +1,13 @@
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];c
 const MAX_FRAME_BYTES = 8 * 1024 * 1024; // AI here for the dimensions
 
-export default {
-    async fetch (request, env) {
+const FRAME_PATH = /^\/frame\/([a-f0-9-]+)$/;
+
+export class FrameStore {
+    constructor(state) {
+        this.storage = state.storage;
+    }
+  async fetch(request) {
         const url = new URL (request.url);
 
     if (request.method === "POST" && url.pathname === "/frame") {
@@ -14,15 +19,13 @@ export default {
         return new Response("frame needs to be a PNG", { status: 415 });
       }
       const id = crypto.randomUUID();
-      await env.FRAMES.put(`frames/${id}`, body, {
-        metadata: {contentType: "image/png"},
-      });
+      await this.storage.put(`frame/${id}`, body);
       return Response.json({ id, url: `${url.origin}/frame/${id}` });
     }
 
-    const match = url.pathname.match(/^\/frame\/([a-f0-9-]+)$/);
+    const match = url.pathname.match(FRAME_PATH);
     if (request.method === "GET" && match) {
-      const frame = await env.FRAMES.get(`frames/${match[1]}`);
+      const frame = await this.storage.get(`frame/${match[1]}`);
       if (frame === null) {
         return new Response("frame not found", { status: 404 });
       }
@@ -36,6 +39,13 @@ export default {
     }
 
     return new Response("frame not found", { status: 404 });
+    }
+}
+
+export default {
+    async fetch(request, env) {
+        const id = env.FRAMES.idFromName("frames");
+        return env.FRAMES.get(id).fetch(request);
     },
 };
 
