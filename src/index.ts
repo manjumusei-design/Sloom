@@ -216,35 +216,34 @@ async function runGameTurn(
 }
 
 
-async function postFrame(
+export async function postFrame(
   client: App["client"],
   channel: string,
   pngPath: string,
   caption: string,
   buttons?: ButtonDef[],
 ): Promise<string> {
-  const imageUrl = await storeFrame(pngPath);
+  let imageUrl = await storeFrame(pngPath);
 
-  const blocks = frameBlocks(imageUrl, caption, buttons);
-
-  for (let attempt = 0;; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     try {
       const res = await client.chat.postMessage({
         channel,
         text: caption,
         blocks,
       });
-      console.log("Sloom posted frame:", imageUrl, res.ts);
+      console.log("[Sloom] posted frame:", imageUrl, res.ts);
       return res.ts ?? "";
     } catch (err) {
       const delay = BLOCK_RETRY_DELAYS_MS[attempt];
       if (isInvalidBlocksError(err) && delay !== undefined) {
-        console.log("Sloom invalid_blocks, retrying", {
+        console.log("[Sloom] WARN invalid_blocks, re-uploading frame", {
           attempt: attempt + 1,
           waitMs: delay,
           imageUrl,
         });
         await sleep(delay);
+        imageUrl = await storeFrame(pngPath);
         continue;
       }
       console.log("Sloom ERROR frame post rejected", {
@@ -260,6 +259,7 @@ async function postFrame(
     }
   }
 }
+
 
 export async function start(config: Config): Promise<RunningApp> {
 	const app = new App({
