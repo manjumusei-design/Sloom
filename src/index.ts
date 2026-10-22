@@ -80,6 +80,21 @@ export function frameBlocks(
   return blocks;
 }
 
+export function isInvalidBlocksError(err: unknown): boolean {
+  const data = (err as{data?: {error?: string}}).data,
+  if (data?.error === " invalid_blocks") return true;
+  const message = (err as {message?: string }).message ?? "";
+  return message.includes("invalid_blocks");
+}
+
+async function probeFrameUrl(frameUrl: string): Promise<string> {
+  try {
+    const res = await fetch(frameUrl;
+    return `frame fetch: HTTP ${res.status}`;
+  } catch (err) {
+    return `frame fetch: unreachable (${(err as Error).message})`;
+  }
+}
 
 const ACTION_PREFIX = "sloom:";
 
@@ -210,35 +225,40 @@ async function postFrame(
 ): Promise<string> {
   const imageUrl = await storeFrame(pngPath);
 
-  const blocks: KnownBlock[] = [
-    {
-        type: "image",
-        image_url: imageUrl,
-        alt_text: "DOOM frame",
-      },
-      {
-      type: "context",
-      elements: [{ type: "mrkdwn", text: caption }],
-    },
-  ];
-  if (buttons && buttons.length > 0) {
-    blocks.push({
-      type: "actions",
-      elements: buttons.map((b) => ({
-        type: "button",
-        text: { type: "plain_text", text: b.label,},
-        action_id: b.action_id,
-      })),
-    });
-  }
+  const blocks = frameBlocks(imageUrl, caption, buttons);
 
-  const res = await client.chat.postMessage({
-    channel,
-    text: caption,
-    blocks,
-  });
-  console.log("Sloom posted frame:", imageUrl, res.ts);
-  return res.ts ?? "";
+  for (let attempt = 0;; attempt++) {
+    try {
+      const res = await client.chat.postMessage({
+        channel,
+        text: caption,
+        blocks,
+      });
+      console.log("Sloom posted frame:", imageUrl, res.ts);
+      return res.ts ?? "";
+    } catch (err) {
+      const delay = BLOCK_RETRY_DELAYS_MS[attempt];
+      if (isInvalidBlocksError(err) && delay !== undefined) {
+        console.log("Sloom invalid_blocks, retrying", {
+          attempt: attempt + 1,
+          waitMs: delay,
+          imageUrl,
+        });
+        await sleep(delay);
+        continue;
+      }
+      console.log("Sloom ERROR frame post rejected", {
+        attempts: attempt + 1,
+        error: (err as Error).message,
+        imageUrl,
+        blocks: JSON.stringify(blocks),
+      });
+      const probe = await probeFrameUrl(imageUrl);
+      throw new Error(`${(err as Error).message} (${probe}, ${imageUrl})`, {
+        cause: err,
+      });
+    }
+  }
 }
 
 export async function start(config: Config): Promise<RunningApp> {
