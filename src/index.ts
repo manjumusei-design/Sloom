@@ -49,6 +49,7 @@ const KEY_ALIASES: Record<string, string[]> = {
   map: ["tab"],
   tab: ["tab"],
   m: ["tab"],
+  focus: ["focus"],
 };
 
 const HELP_WORDS = new Set(["help", "?"]);
@@ -63,10 +64,21 @@ export function compassDir(angle: number | null): string {
   return dirs[idx] ?? "";
 }
 
-export function buildCaption(cmd: string, angle: number | null): string {
+export function focusNote(focus: { deg: number; blocks: number } | null): string {
+  if (!focus) return "";
+  if (focus.deg === -1 && focus.blocks === 0) return " No target in sight.";
+  if (focus.deg === 0) return " Target locked dead ahead.";
+  return ` Target locked ${Math.abs(focus.deg)}° ${focus.deg > 0 ? "right" : "left"}, ~${focus.blocks} tiles away.`;
+}
+
+export function buildCaption(
+  cmd: string,
+  angle: number | null,
+  focus: { deg: number; blocks: number } | null = null,
+): string {
   const dir = compassDir(angle);
   const dirStr = dir ? ` Facing ${dir} (${angle}°).` : "";
-  return `Sloom — last: ${cmd}.${dirStr} Commands: forward, back, left, right, fire, use, strafeleft, straferight, map. Combine with commas.`;
+  return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)} Commands: forward, back, left, right, fire, use, strafeleft, straferight, map, focus. Combine with commas.`;
 }
 
 export function resolveKeys(text: string): string[] | null {
@@ -134,6 +146,39 @@ export async function start(config: Config): Promise<RunningApp> {
         return;
       }
       lastCommandTime.set(channel, now);
+    }
+
+    if (HELP_WORDS.has(text.toLowerCase())) {
+      await reply([
+          "*Sloom commands*",
+          "`/sloom start` — start a new game",
+          "`/sloom stop` — stop the game",
+          "`/sloom help` — help message",
+          "",
+          "*Movement*",
+          "`w` / `forward` — Move forward",
+          "`s` / `back` — Move backward",
+          "`a` / `left` — Turn left",
+          "`d` / `right` — Turn right",
+          "`sl` / `strafeleft` — Strafe left",
+          "`sr` / `straferight` — Strafe right",
+          "",
+          "*Action*",
+          "`f` / `fire` — shoot",
+          "`u` / `use` — open doors or interact",
+          "`m` / `map` — toggle automap",
+          "`focus` — snap aim to the nearest enemy in sight",
+          "",
+          "*Fine-Tuned Turning*",
+          "`turn 90` — turn right 90°",
+          "`turn -90` — turn left 90°",
+          "`turn 45` — turn right 45°",
+          "",
+          "*Combos* (comma-separated)",
+          "`w,fire` — move and shoot in one turn",
+          "`focus,fire` — lock on and shoot",
+        ].join("\n"));
+      return;
     }
 
     if (STOP_WORDS.has(text.toLowerCase())) {
@@ -204,7 +249,7 @@ export async function start(config: Config): Promise<RunningApp> {
 
 		const keys = resolveKeys(text);
 		if (!keys) {
-      await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight. Combine with commas.`);
+      await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight, focus. Combine with commas to chain.`);
       return;
     }
 
@@ -227,7 +272,7 @@ export async function start(config: Config): Promise<RunningApp> {
       const result = await sendTurn(sess.engine, keys, TICS_PER_TURN);
       const overlayPath = overlayPathFor(result.framePath);
       await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
-      const caption = buildCaption(text, result.angle);
+      const caption = buildCaption(text, result.angle, result.focus);
 			await postFrame(
 				app.client,
         channel,
