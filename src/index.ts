@@ -187,7 +187,7 @@ export function buildCaption(
 ): string {
   const dir = compassDir(angle);
   const dirStr = dir ? ` Facing ${dir} (${angle}°).` : "";
-  return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)} Commands: forward, back, left, right, fire, use, strafeleft, straferight, map, focus. Combine with commas.`;
+  return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)} Buttons: forward, back, left, right, fire, use, strafeleft, straferight, map, focus.`;
 }
 
 export function resolveKeys(text: string): string[] | null {
@@ -435,6 +435,9 @@ export async function start(config: Config): Promise<RunningApp> {
 
     const keys = resolveKeys(cmd);
     if (!keys) {
+      await reply("Unknown command. Try: forward, back, left, right, fire, use, strafeleft, straferight, focus. Combine with commas.");
+      return;
+    }
     const queued = scheduleTurn(channel, () =>
       runGameTurn(app.client, channel, cmd, keys, respond),
     );
