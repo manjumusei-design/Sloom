@@ -218,10 +218,11 @@ export function buildCaption(
   const dir = compassDir(angle);
   const dirStr = dir ? ` Facing ${dir} (${angle}°).` : "";
   if (death) {
-    return `Sloom — last: ${cmd}.${dirStr}${deathNote(death)} Buttons: restart.`;
+    return `Sloom — last: ${cmd}.${dirStr}${deathNote(death)}`;
   }
-  return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)} Buttons: forward, back, left, right, fire, use, strafeleft, straferight, map, focus.`;
+  return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)}`;
 }
+
 
 export function resolveKeys(text: string): string[] | null {
   const t = text.trim().toLowerCase();
