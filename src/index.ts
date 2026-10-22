@@ -38,7 +38,7 @@ const sessions = new Map<string, GameSession>();
 const lastButtonTime  = new Map<string, number>();
 const lastCommandTime = new Map<string, number>();
 const RATE_LIMIT_MS = 5000;
-const BUTTON_COOLDOWN_MS = 1200;
+const BUTTON_DEBOUNCE_MS = 250;
 const OPENING_TICS = 1;
 
 interface ButtonDef {
@@ -97,6 +97,29 @@ async function probeFrameUrl(frameUrl: string): Promise<string> {
 }
 
 const ACTION_PREFIX = "sloom:";
+const MAX_QUEUED_TURNS = 2;
+
+const channelQueues = new Map<string, Promise<void>>();
+const channelPending = new Map<string, number>();
+
+export function scheduleTurn(channel: string, task: () => Promise<void>): boolean {
+  const pending = channelPending.get(channel) ?? 0;
+  if (pending >= MAX_QUEUED_TURNS) return false;
+  channelPending.set(channel, pending + 1);
+
+  const previous = channelQueues.get(channel) ?? Promise.resolve();
+  const next = previous.then(task, task).finally(() => {
+    const left = (channelPending.get(channel) ?? 1) - 1;
+    if (left <= 0) {
+      channelPending.delete(channel);
+      channelQueues.delete(channel);
+    } else {
+      channelPending.set(channel, left);
+    }
+  });
+  channelQueues.set(channel, next.catch(() => {}));
+  return true;
+}
 
 const FRAME_BUTTONS: ButtonDef[] = [
   { action_id: `${ACTION_PREFIX}forward`, label: "Forward" },
@@ -193,6 +216,7 @@ async function runGameTurn(
   cmd: string,
   keys: string[],
   respond: Responder,
+  tics: number = TICS_PER_TURN,
 ): Promise<void> {}
   const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
   const sess = sessions.get(channel);
@@ -208,9 +232,10 @@ async function runGameTurn(
     await postFrame(client, channel, overlayPath, caption, FRAME_BUTTONS);
   } catch (err) {
     const msg = (err as Error).message;
+    console.log("Sloom ERROR turn failed", { cmd, msg });
     const text = msg.includes(TURN_IN_FLIGHT)
-      ? "Wait for frame to load."
-      : `Failed: ${msg}`;
+      ? "Wait for the current frame to load."
+      : "Slack could not load that frame. Try the turn again.";
     await reply(text);
   }
 }
@@ -374,30 +399,18 @@ export async function start(config: Config): Promise<RunningApp> {
     if (turnMatch && turnMatch[1]) {
       const deg = parseInt(turnMatch[1], 10);
       const tics = Math.max(1, Math.round(Math.abs(deg) / DEGREES_PER_TIC));
-      const dir = deg >= 0 ? "turnright" : "turnleft";
-      const keys = [dir];
-      try {
-        const result = await sendTurn(sess.engine, keys, tics);
-        const overlayPath = overlayPathFor(result.framePath);
-        await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
-        const caption = buildCaption(`turn ${deg}`, result.angle);
-        await postFrame(app.client, channel, overlayPath, caption, FRAME_BUTTONS);
-      } catch (err) {
-        const msg = (err as Error).message;
-        log(config, "error", "turn failed", { msg });
-        await reply(`Turn failed: ${msg}`);
-      }
+      const keys = [deg >= 0 ? "turnright" : "turnleft"];
+      const queued = scheduleTurn(channel, () =>
+        runGameTurn(app.client, channel, `turn ${deg}`, keys, respond, tics),
+      );
+      if (!queued) await reply("Slow down: the last frames are still rendering.");
       return;
     }
 
-
-		const keys = resolveKeys(text);
-		if (!keys) {
-      await reply(`Unknown command: \`${text}\`. Try: forward, back, left, right, fire, use, strafeleft, straferight, focus. Combine with commas to chain.`);
-      return;
-    }
-
-    await runGameTurn(app.client, channel, text, keys, respond);
+    const queued = scheduleTurn(channel, () =>
+      runGameTurn(app.client, channel, text, keys, respond),
+    );
+    if (!queued) await reply("Slow down: the last frames are still rendering.");
   });
 
   app.action(new RegExp(`^${ACTION_PREFIX}`), async ({ ack, respond, body, action }) => {
@@ -415,17 +428,17 @@ export async function start(config: Config): Promise<RunningApp> {
 
     const now = Date.now();
     const last = lastButtonTime.get(channel) ?? 0;
-    if (now - last < BUTTON_COOLDOWN_MS) {
+    if (now - last < BUTTON_DEBOUNCE_MS) {
       return;
     }
     lastButtonTime.set(channel, now);
 
     const keys = resolveKeys(cmd);
     if (!keys) {
-      await reply(`Unknown button: ${cmd}`);
-      return;
-    }
-    await runGameTurn(app.client, channel, cmd, keys, respond);
+    const queued = scheduleTurn(channel, () =>
+      runGameTurn(app.client, channel, cmd, keys, respond),
+    );
+    if (!queued) await reply("Slow down: the last frames are still rendering.");
   });
   app.error(async (error) => {
     log(config, "error", "bolt error", { message: error.message });
