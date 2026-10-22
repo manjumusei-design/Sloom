@@ -41,7 +41,7 @@ const RATE_LIMIT_MS = 5000;
 const BUTTON_DEBOUNCE_MS = 250;
 const OPENING_TICS = 1;
 
-interface ButtonDef {
+export interface ButtonDef {
   action_id: string;
   label: string;
 }
@@ -126,6 +126,8 @@ const FRAME_BUTTONS: ButtonDef[] = [
   { action_id: `${ACTION_PREFIX}back`, label: "Back" },
   { action_id: `${ACTION_PREFIX}left`, label: "Left" },
   { action_id: `${ACTION_PREFIX}right`, label: "Right" },
+  { action_id: `${ACTION_PREFIX}strafeleft`, label: "Strafe Left" },
+  { action_id: `${ACTION_PREFIX}straferight`, label: "Strafe Right" },
   { action_id: `${ACTION_PREFIX}fire`, label: "Fire" },
   { action_id: `${ACTION_PREFIX}focusfire`, label: "Focus+Fire" },
   { action_id: `${ACTION_PREFIX}focus`, label: "Focus" },
