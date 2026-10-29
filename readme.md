@@ -6,7 +6,6 @@ This is basically doom but in slack and played frame by frame, which plays like 
 I used the Slack Socket mode connection to drive the doomgeneric engine which is built from C to offload rendering from Slack or any browser. 
 
 
-
 1.Slack client sends either a /sloom <command> or a button reaction 
 2. Bolt bot acknowledges it
 3. Bot turns the commands into a keypress, IE "forwards" means the W key in doom or any combinations containing X amount of commands  will be converted to X amount of keypresses in quick succession
@@ -42,6 +41,38 @@ cp .env.example .env
 
 Never commit `.env`. The bot only needs outbound connections (Socket Mode),
 so no inbound port, TLS certificate or reverse proxy is required.
+
+
+# Quick Start
+1. Slack app
+Open https://api.slack.com/apps and choose Create New App then From scratch. Name it whatever you like (the reference is sloom).
+Socket Mode: enable it. When asked for a token, create an app-level token with the connections:write scope. This is the xapp-... token.
+OAuth & Permissions: add bot token scopes chat:write, commands, files:write.
+Slash Commands: create a command (the reference uses /sloom) with the usage hint start. Socket Mode is on by default afaik, so no Request URL is needed.
+Interactivity & Shortcuts: enable interactivity as without this the tap buttons do nothing.
+Install App: install it to your workspace and copy the bot token (xoxb-...).
+
+
+3. Native engine
+The bot drives a headless build of doomgeneric.
+
+git clone https://github.com/ozkl/doomgeneric.git
+cd native
+make DG_DIR=/path/to/doomgeneric/doomgeneric
+That produces native/sloom in this repository. On Debian/Ubuntu install build-essential libpng-dev zlib1g-dev first.
+
+3. Game data
+Put a "legally" obtained WAD next to the repo and point DOOM_WAD_PATH at it. WADs are ignored by git and are distributed under their own license, never commit commercial WADs in your version.
+
+4. Frame store (Cloudflare Worker)
+Slack cannot render the bot's own file uploads inline without an authenticated fetch, and Slack's own file URLs require auth headers, so frames are posted to a public URL instead: src/frame-store.ts sends each PNG to the worker in frame-store/ and puts the returned URL into the Slack image_url block.
+
+
+Deploy it:
+cd frame-store
+npx wrangler login
+npx wrangler deploy
+No namespace to create: the Durable Object is provisioned by the migration in frame-store/wrangler.jsonc. The command prints your worker URL (https://<name>.<subdomain>.workers.dev), which is your FRAME_STORE_URL. The free plan from cloudflare covers this comfortably as frames are about 37 to 40 KB each, and the store keep them until you clear the object.
 
 # Known limitations
 
