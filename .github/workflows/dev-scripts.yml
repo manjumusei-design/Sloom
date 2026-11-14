@@ -1,0 +1,74 @@
+name: Dev scripts
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - ".github/workflows/dev-scripts.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - ".github/workflows/dev-scripts.yml"
+
+jobs:
+  powershell:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Store dummy tokens
+        run: |
+          cmdkey /generic:sloom-slack-app-token /user:sloom /pass:"xapp-dummy-token-for-ci"
+          cmdkey /generic:sloom-slack-bot-token /user:sloom /pass:"xoxb-dummy-token-for-ci"
+
+      - name: Run dev.ps1 with a stubbed bot launch
+        run: |
+          New-Item -ItemType Directory -Path shim | Out-Null
+          Set-Content -Path shim/npx.cmd -Value "@echo off`necho DEV_OK"
+          $env:PATH = "$(Resolve-Path shim);$env:PATH"
+          $out = & ./scripts/dev.ps1 2>&1
+          Write-Host $out
+          if (-not ($out -match "\[dev\] starting bot")) { exit 1 }
+          if (-not ($out -match "DEV_OK")) { exit 1 }
+
+      - name: Reject a token with the wrong prefix
+        run: |
+          cmdkey /generic:sloom-slack-app-token /user:sloom /pass:"wrong-token"
+          try {
+            & ./scripts/dev.ps1
+            Write-Host "dev.ps1 accepted an invalid token"
+            exit 1
+          } catch {
+            if ($_.Exception.Message -notmatch "INVALID") { throw }
+          }
+
+  bash:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Store dummy tokens
+        run: |
+          security add-generic-password -U -s sloom-slack-app-token -a sloom -w "xapp-dummy-token-for-ci"
+          security add-generic-password -U -s sloom-slack-bot-token -a sloom -w "xoxb-dummy-token-for-ci"
+
+      - name: Run dev.sh with a stubbed bot launch
+        run: |
+          mkdir shim
+          printf '#!/bin/sh\necho DEV_OK\n' > shim/npx
+          chmod +x shim/npx
+          out="$(PATH="$PWD/shim:$PATH" bash scripts/dev.sh)"
+          printf '%s\n' "$out"
+          case "$out" in *"[dev] starting bot"*) ;; *) exit 1 ;; esac
+          case "$out" in *"DEV_OK"*) ;; *) exit 1 ;; esac
+
+      - name: Reject a token with the wrong prefix
+        run: |
+          security add-generic-password -U -s sloom-slack-app-token -a sloom -w "wrong-token"
+          if bash scripts/dev.sh >/dev/null 2>&1; then
+            echo "dev.sh accepted an invalid token"
+            exit 1
+          fi
