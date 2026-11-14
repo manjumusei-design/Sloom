@@ -16,8 +16,10 @@ read_secret() {
   printf '%s' "$value"
 }
 
-export SLACK_APP_TOKEN="$(read_secret sloom-slack-app-token 'xapp-' 'app-level token, connections:write')"
-export SLACK_BOT_TOKEN="$(read_secret sloom-slack-bot-token 'xoxb-' 'bot user token, from app install')"
+SLACK_APP_TOKEN="$(read_secret sloom-slack-app-token 'xapp-' 'app-level token, connections:write')"
+export SLACK_APP_TOKEN
+SLACK_BOT_TOKEN="$(read_secret sloom-slack-bot-token 'xoxb-' 'bot user token, from app install')"
+export SLACK_BOT_TOKEN
 
 echo "[dev] app token: present (xapp-, ${#SLACK_APP_TOKEN} chars)"
 echo "[dev] bot token: present (xoxb-, ${#SLACK_BOT_TOKEN} chars)"

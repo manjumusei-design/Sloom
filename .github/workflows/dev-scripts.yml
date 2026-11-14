@@ -38,7 +38,7 @@ jobs:
       - name: Reject a token with the wrong prefix
         run: |
           cmdkey /generic:sloom-slack-app-token /user:sloom /pass:"wrong-token"
-          New-Item -ItemType Directory -Path shim | Out-Null
+          New-Item -ItemType Directory -Path shim -Force | Out-Null
           Set-Content -Path shim/npx.cmd -Value "@echo off`necho BOT_SHOULD_NOT_START"
           $env:PATH = "$(Resolve-Path shim);$env:PATH"
           try {
