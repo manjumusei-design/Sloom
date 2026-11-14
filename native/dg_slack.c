@@ -1,19 +1,19 @@
-//had to ask ai to help me here with the png decode in some areas wherever commented, all ai output was reviewed and tested by me
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <zlib.h>
+
 #include "doomkeys.h"
 #include "m_argv.h"
 #include "doomgeneric.h"
 #include "doomstat.h"
-
-
-#include "p.localh"
+#include "p_local.h"
 #include "p_mobj.h"
 #include "am_map.h"
+
 #define SLACK_MS_PER_TICK 29
 #define TURN_LINE_MAX 1024
 #define MAX_KEYS_PER_TURN 8
@@ -26,15 +26,13 @@
 static uint32_t s_TickCounter = 0;
 
 
-#define KEYQUEUE_SIE 64
-
-
+#define KEYQUEUE_SIZE 64
 
 static unsigned short s_KeyQueue[KEYQUEUE_SIZE];
 static unsigned int s_KeyQueueWriteIndex = 0;
 static unsigned int s_KeyQueueReadIndex = 0;
 
-static void slack_push_key(int pressed )
+static void slack_push_key(int pressed, unsigned char key)
 {
     unsigned int next = (s_KeyQueueWriteIndex + 1) % KEYQUEUE_SIZE;
     if (next == s_KeyQueueReadIndex)
@@ -46,7 +44,7 @@ static void slack_push_key(int pressed )
 typedef struct {
     const char *name;
     unsigned char code;
-} slack keymap t;
+} slack_keymap_t;
 
 static const slack_keymap_t s_Keymap[] = {
     { "forward",  KEY_UPARROW },
@@ -69,9 +67,9 @@ static const slack_keymap_t s_Keymap[] = {
     { NULL, 0 }
 };
 
-static int slack_lookup_key(const char *name, unsigned char * out)
+static int slack_lookup_key(const char *name, unsigned char *out)
 {
-    for (int i = 0; s_keymap[i].name != NULL; i++) {
+    for (int i = 0; s_Keymap[i].name != NULL; i++) {
         if (strcmp(s_Keymap[i].name, name) == 0) {
             *out = s_Keymap[i].code;
             return 1;
@@ -83,6 +81,7 @@ static int slack_lookup_key(const char *name, unsigned char * out)
 
 static int s_FrameDrawn = 0;
 static const char *s_FramePath = "frame.png";
+
 void DG_Init(void)
 {
 }
@@ -129,7 +128,7 @@ static void png_make_crc_table(void)
     for (uint32_t n = 0; n < 256; n++) {
         uint32_t c = n;
         for (int k = 0; k < 8; k++)
-            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1); 
+            c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
         png_crc_table[n] = c;
     }
     png_crc_ready = 1;
@@ -145,14 +144,13 @@ static uint32_t png_crc(const unsigned char *buf, size_t len)
     return c ^ 0xFFFFFFFFu;
 }
 
-static void put_be32(unsigned char * p, uint32_t v)
+static void put_be32(unsigned char *p, uint32_t v)
 {
     p[0] = (unsigned char)(v >> 24);
     p[1] = (unsigned char)(v >> 16);
     p[2] = (unsigned char)(v >> 8);
     p[3] = (unsigned char)v;
 }
-
 static int png_write_chunk(FILE *f, const char *type,
                            const unsigned char *data, size_t len)
 {
@@ -183,32 +181,32 @@ static long png_write_frame(const char *path)
     const int w = DOOMGENERIC_RESX;
     const int h = DOOMGENERIC_RESY;
 
-    size_t stride = (size_t)w*3;
-    size_t rawlen = size_t)h * (stride + 1);
-    unsigned char * raw = malloc(rawlen);
+    size_t stride = (size_t)w * 3;
+    size_t rawlen = (size_t)h * (stride + 1);
+    unsigned char *raw = malloc(rawlen);
     if (!raw)
-            return 0;
+        return 0;
 
     const uint32_t *src = DG_ScreenBuffer;
     size_t o = 0;
     for (int y = 0; y < h; y++) {
-        raw[o++] = 0;  
+        raw[o++] = 0;
         const uint32_t *row = src + (size_t)y * w;
         for (int x = 0; x < w; x++) {
             uint32_t px = row[x];
-            raw[o++] = (unsigned char)((px >> 16) & 0xFF);  
-            raw[o++] = (unsigned char)((px >> 8) & 0xFF);   
-            raw[o++] = (unsigned char)(px & 0xFF);          
+            raw[o++] = (unsigned char)((px >> 16) & 0xFF);
+            raw[o++] = (unsigned char)((px >> 8) & 0xFF);
+            raw[o++] = (unsigned char)(px & 0xFF);
         }
     }
-//had to ask AI to help with compressing the raw image and the char sigs, opening the output file, and to compile a PNG to be sent back to the slackbot, everything was reviewed and tested by me 
+
     uLongf zlen = compressBound((uLong)rawlen);
     unsigned char *zbuf = malloc(zlen);
     if (!zbuf) {
         free(raw);
         return 0;
     }
-    if (compress2(zbuf, &zlen, raw, (uLong)rawlen, 6) != Z_OK) {
+    if (compress2(zbuf, &zlen, raw, (uLong)rawlen, PNG_COMPRESSION_LEVEL) != Z_OK) {
         free(raw);
         free(zbuf);
         return 0;
@@ -220,18 +218,17 @@ static long png_write_frame(const char *path)
         free(zbuf);
         return 0;
     }
-
     static const unsigned char sig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
     int ok = fwrite(sig, 1, 8, f) == 8;
 
     unsigned char ihdr[13];
-    put_be32(ihdr,(uint32_t)w);
+    put_be32(ihdr, (uint32_t)w);
     put_be32(ihdr + 4, (uint32_t)h);
-    ihdr[8] = 8;   
-    ihdr[9] = 2;   
-    ihdr[10] = 0;  
-    ihdr[11] = 0;  
-    ihdr[12] = 0;  
+    ihdr[8] = PNG_BIT_DEPTH;
+    ihdr[9] = PNG_COLOR_RGB;
+    ihdr[10] = 0;
+    ihdr[11] = 0;
+    ihdr[12] = 0;
     ok = ok && png_write_chunk(f, "IHDR", ihdr, sizeof(ihdr));
     ok = ok && png_write_chunk(f, "IDAT", zbuf, (size_t)zlen);
     ok = ok && png_write_chunk(f, "IEND", NULL, 0);
@@ -278,9 +275,9 @@ static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_t
     *out_tics = 1;
 
     const char *k = strstr(line, "\"keys\"");
-    if(k) {
+    if (k) {
         const char *p = strchr(k, '[');
-        if(p) {
+        if (p) {
             p++;
             while (*p && *p != ']') {
                 while (*p == ' ' || *p == ',') p++;
@@ -295,23 +292,20 @@ static int parse_turn(const char *line, char keys[][32], int maxkeys, int *out_t
             }
         }
     }
-
     const char *t = strstr(line, "\"tics\"");
     if (t) {
         const char *p = strchr(t, ':');
         if (p) {
-            int v = atoi(p+1);
-            if (v>0) * out_tics = v;
+            int v = atoi(p + 1);
+            if (v > 0) *out_tics = v;
         }
     }
     return nkeys;
 }
 
-
-
 #define FOCUS_RANGE (MELEERANGE + 20 * 64 * FRACUNIT)
 
-extern boolean autopactive;
+extern boolean automapactive;
 extern void AM_Start(void);
 extern boolean viewactive;
 
@@ -331,7 +325,7 @@ static void slack_toggle_automap(void)
 static angle_t slack_deg_to_angle(int deg)
 {
     int norm = ((deg % 360) + 360) % 360;
-    return (angle_t)((unsigned long long)norm * ANGLE_UNITS /360ULL);
+    return (angle_t)((unsigned long long)norm * ANGLE_UNITS / 360ULL);
 }
 
 static int slack_focus(int *out_deg, int *out_blocks)
@@ -340,9 +334,9 @@ static int slack_focus(int *out_deg, int *out_blocks)
     if (mo == NULL)
         return 0;
 
-        angle_t start = mo->angle;
-        mobj_t *best = NULL;
-        int best_deg = 0;
+    angle_t start = mo->angle;
+    mobj_t *best = NULL;
+    int best_deg = 0;
 
     for (int pass = 0; pass < 2 && best == NULL; pass++) {
         for (int r = 0; r <= 180 && best == NULL; r++) {
@@ -365,14 +359,13 @@ static int slack_focus(int *out_deg, int *out_blocks)
             }
         }
     }
+
     if (best == NULL)
         return 0;
 
-
-        mo->angle = start + slack_deg_to_angle(best_deg);
-        return 1;
+    mo->angle = start + slack_deg_to_angle(best_deg);
+    return 1;
 }
-
 
 #define MAX_TICS_PER_TURN 70
 
@@ -388,11 +381,10 @@ int main(int argc, char **argv)
         slack_emit_frame();
     fflush(stdout);
 
-
     char line[TURN_LINE_MAX];
-    while (fgets(line, sizeof(line), stdin) != NULL)
+    while (fgets(line, sizeof(line), stdin) != NULL) {
         char keys[MAX_KEYS_PER_TURN][KEY_NAME_MAX];
-    int tics = 1;
+        int tics = 1;
         int nkeys = parse_turn(line, keys, MAX_KEYS_PER_TURN, &tics);
         if (tics > MAX_TICS_PER_TURN)
             tics = MAX_TICS_PER_TURN;
@@ -434,9 +426,11 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < ncodes; i++)
             slack_push_key(0, codes[i]);
+
         doomgeneric_Tick();
+
         for (int i = 0; i < (have_map ? 2 : 0); i++)
-        doomgeneric_Tick();
+            doomgeneric_Tick();
 
         slack_emit_frame();
         fflush(stdout);

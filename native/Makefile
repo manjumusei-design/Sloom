@@ -1,4 +1,3 @@
-//I have no idea how to make Makefiles so I had to ask AI to help me with this
 CC ?= cc
 DG_DIR ?= $(HOME)/doomgeneric/doomgeneric
 
