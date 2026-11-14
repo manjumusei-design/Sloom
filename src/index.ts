@@ -14,33 +14,30 @@ import {
 import { applyOverlay, overlayPathFor } from "./overlay.js";
 import { storeFrame } from "./frame-store.js";
 import type { KnownBlock } from "@slack/types";
-import { applyOverlay, overlayPathFor } from "./overlay.js";
-import { storeFrame } from "./frame-store.js";
-//Asked AI to help me write log strings just for troubleshooting
+
 function log(config: Config, level: string, msg: string, extra?: unknown): void {
   const order = ["debug", "info", "warn", "error"];
   if (order.indexOf(level) < order.indexOf(config.logLevel)) return;
-  const line = `[sloom] ${level.toUpperCase()} ${msg}`;
+  const line = `[Sloom] ${level.toUpperCase()} ${msg}`;
   if (extra === undefined) console.log(line);
   else console.log(line, extra);
 }
 
-export interface RuningApp {
-	app: App;
+export interface RunningApp {
+  app: App;
 }
 
- 
 interface GameSession {
-	engine: EngineSession;
-	channel: string;
+  engine: EngineSession;
+  channel: string;
   dead: boolean;
 }
+
 const sessions = new Map<string, GameSession>();
-const lastButtonTime  = new Map<string, number>();
 const lastCommandTime = new Map<string, number>();
+const lastButtonTime = new Map<string, number>();
 const RATE_LIMIT_MS = 5000;
 const BUTTON_DEBOUNCE_MS = 250;
-
 
 export interface ButtonDef {
   action_id: string;
@@ -82,17 +79,16 @@ export function frameBlocks(
   }
   return blocks;
 }
-
 export function isInvalidBlocksError(err: unknown): boolean {
-  const data = (err as{data?: {error?: string}}).data,
-  if (data?.error === " invalid_blocks") return true;
-  const message = (err as {message?: string }).message ?? "";
+  const data = (err as { data?: { error?: string } }).data;
+  if (data?.error === "invalid_blocks") return true;
+  const message = (err as { message?: string }).message ?? "";
   return message.includes("invalid_blocks");
 }
 
 async function probeFrameUrl(frameUrl: string): Promise<string> {
   try {
-    const res = await fetch(frameUrl;
+    const res = await fetch(frameUrl);
     return `frame fetch: HTTP ${res.status}`;
   } catch (err) {
     return `frame fetch: unreachable (${(err as Error).message})`;
@@ -143,6 +139,7 @@ export const FRAME_BUTTON_ROWS: ButtonDef[][] = [
     { action_id: `${ACTION_PREFIX}map`, label: "Map" },
   ],
 ];
+
 export const FRAME_BUTTONS: ButtonDef[] = FRAME_BUTTON_ROWS.flat();
 
 export const RESTART_BUTTON_ROWS: ButtonDef[][] = [
@@ -188,6 +185,7 @@ export function compassDir(angle: number | null): string {
   const idx = Math.round(angle / 45) % 8;
   return dirs[idx] ?? "";
 }
+
 export function focusNote(focus: { deg: number; blocks: number } | null): string {
   if (!focus) return "";
   if (focus.deg === -1 && focus.blocks === 0) return " No target in sight.";
@@ -200,6 +198,7 @@ export interface DeathInfo {
   kills: number | null;
   totalKills: number | null;
 }
+
 export function deathNote(death: DeathInfo | null): string {
   if (!death) return "";
   let note = " You died.";
@@ -222,7 +221,6 @@ export function buildCaption(
   }
   return `Sloom — last: ${cmd}.${dirStr}${focusNote(focus)}`;
 }
-
 
 export function resolveKeys(text: string): string[] | null {
   const t = text.trim().toLowerCase();
@@ -251,7 +249,7 @@ async function runGameTurn(
   keys: string[],
   respond: Responder,
   tics: number = TICS_PER_TURN,
-): Promise<void> {}
+): Promise<void> {
   const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
   const sess = sessions.get(channel);
   if (!sess) {
@@ -280,14 +278,15 @@ async function runGameTurn(
     );
   } catch (err) {
     const msg = (err as Error).message;
-    console.log("Sloom ERROR turn failed", { cmd, msg });
+    console.log("[Sloom] ERROR turn failed", { cmd, msg });
     const text = msg.includes(TURN_IN_FLIGHT)
       ? "Wait for the current frame to load."
-      : "Slack could not load that frame. Try the turn again.";
+      : isInvalidBlocksError(err)
+        ? "Slack could not load that frame. Try the turn again."
+        : "That turn failed. Try again.";
     await reply(text);
   }
 }
-
 
 export async function postFrame(
   client: App["client"],
@@ -320,7 +319,7 @@ export async function postFrame(
         imageUrl = await storeFrame(pngPath);
         continue;
       }
-      console.log("Sloom ERROR frame post rejected", {
+      console.log("[Sloom] ERROR frame post rejected", {
         attempts: attempt + 1,
         error: (err as Error).message,
         imageUrl,
@@ -334,13 +333,12 @@ export async function postFrame(
   }
 }
 
-
 export async function start(config: Config): Promise<RunningApp> {
-	const app = new App({
-		token:config.slackBotToken,
-		appToken: config.slackAppToken,
-		socketMode: true,
-	});
+  const app = new App({
+    token: config.slackBotToken,
+    appToken: config.slackAppToken,
+    socketMode: true,
+  });
 
   app.command("/sloom", async ({ ack, respond, command }) => {
     await ack();
@@ -349,10 +347,10 @@ export async function start(config: Config): Promise<RunningApp> {
     const channel = command.channel_id;
     const reply = (msg: string) => respond({ response_type: "ephemeral", text: msg });
 
-    if (!HELP_WORDS.has(text.toLowerCase())){
+    if (!HELP_WORDS.has(text.toLowerCase())) {
       const now = Date.now();
       const last = lastCommandTime.get(channel) ?? 0;
-      if (now - last <RATE_LIMIT_MS) {
+      if (now - last < RATE_LIMIT_MS) {
         const remaining = Math.ceil((RATE_LIMIT_MS - (now - last)) / 1000);
         await reply(`Please wait ${remaining}s before sending another command.`);
         return;
@@ -365,24 +363,24 @@ export async function start(config: Config): Promise<RunningApp> {
           "*Sloom commands*",
           "`/sloom start` — start a new game",
           "`/sloom stop` — stop the game",
-          "`/sloom help` — help message",
+          "`/sloom help` — this message",
           "",
           "*Movement*",
-          "`w` / `forward` — Move forward",
-          "`s` / `back` — Move backward",
-          "`a` / `left` — Turn left",
-          "`d` / `right` — Turn right",
-          "`sl` / `strafeleft` — Strafe left",
-          "`sr` / `straferight` — Strafe right",
+          "`w` / `forward` — walk forward",
+          "`s` / `back` — walk backward",
+          "`a` / `left` — turn left",
+          "`d` / `right` — turn right",
+          "`sl` / `strafeleft` — strafe left",
+          "`sr` / `straferight` — strafe right",
           "`restart` — restart the level after you die",
           "",
           "*Action*",
           "`f` / `fire` — shoot",
-          "`u` / `use` — open doors or interact",
+          "`u` / `use` — open doors / interact",
           "`m` / `map` — toggle automap",
           "`focus` — snap aim to the nearest enemy in sight",
           "",
-          "*Fine-Tuned Turning*", // This is for the sweats but I dont think it will be widely used at all
+          "*Mouse-like turning*",
           "`turn 90` — turn right 90°",
           "`turn -90` — turn left 90°",
           "`turn 45` — turn right 45°",
@@ -410,16 +408,16 @@ export async function start(config: Config): Promise<RunningApp> {
       }
       return;
     }
-		
-		if(START_WORDS.has(text.toLowerCase())){
-			if (sessions.has(channel)) {
-				await reply("A game is already running. Use '/sloom stop' first.");
-				return;
-			}
+
+    if (START_WORDS.has(text.toLowerCase())) {
+      if (sessions.has(channel)) {
+        await reply("A game is already running. Use `/sloom stop` first.");
+        return;
+      }
       try {
         const engine = startEngine();
-        const result = await sendTurn(engine, [], OPENING_TICS);
         const result = await engine.ready;
+        const overlayPath = overlayPathFor(result.framePath);
         await applyOverlay(result.framePath, overlayPath, { angle: result.angle });
         const caption = buildCaption("start", result.angle);
         await postFrame(
@@ -434,16 +432,16 @@ export async function start(config: Config): Promise<RunningApp> {
       } catch (err) {
         const msg = (err as Error).message;
         log(config, "error", "start failed", { msg });
-        await reply(`Could not start the game: ${msg}`);
+        await reply("Could not start the game. Check the bot logs.");
       }
       return;
     }
 
-		const sess = sessions.get(channel);
-		if (!sess) {
-			await reply("No game is running. Start one with '/sloom start'.");
-			return;
-		}
+    const sess = sessions.get(channel);
+    if (!sess) {
+      await reply("No game running. Start one with `/sloom start`.");
+      return;
+    }
 
     const turnMatch = text.match(TURN_COMMAND);
     if (turnMatch && turnMatch[1]) {
@@ -454,6 +452,12 @@ export async function start(config: Config): Promise<RunningApp> {
         runGameTurn(app.client, channel, `turn ${deg}`, keys, respond, tics),
       );
       if (!queued) await reply("Slow down: the last frames are still rendering.");
+      return;
+    }
+
+    const keys = resolveKeys(text);
+    if (!keys) {
+      await reply("Unknown command. Try: forward, back, left, right, fire, use, strafeleft, straferight, focus. Combine with commas.");
       return;
     }
 
@@ -485,7 +489,7 @@ export async function start(config: Config): Promise<RunningApp> {
 
     const keys = resolveKeys(cmd);
     if (!keys) {
-      await reply("Unknown command. Try: forward, back, left, right, fire, use, strafeleft, straferight, focus. Combine with commas.");
+      await reply(`Unknown button: ${cmd}`);
       return;
     }
     const queued = scheduleTurn(channel, () =>
@@ -493,6 +497,7 @@ export async function start(config: Config): Promise<RunningApp> {
     );
     if (!queued) await reply("Slow down: the last frames are still rendering.");
   });
+
   app.error(async (error) => {
     log(config, "error", "bolt error", { message: error.message });
   });
@@ -505,11 +510,11 @@ export async function start(config: Config): Promise<RunningApp> {
 }
 
 export async function stop(running: RunningApp): Promise<void> {
-	for (const sess of sessions.values()) {
-		stopEngine(sess.engine);
-	}
-	sessions.clear();
-	await running.app.stop();
+  for (const sess of sessions.values()) {
+    stopEngine(sess.engine);
+  }
+  sessions.clear();
+  await running.app.stop();
 }
 
 const isMain =
@@ -517,15 +522,15 @@ const isMain =
   import.meta.url === `file://${process.argv[1]}`;
 
 if (isMain) {
-	const config = loadConfig();
-	start(config).catch((err:unknown) => {
-    console.error("FATAL Sloom failed to start:", (err as Error).message);
+  const config = loadConfig();
+  start(config).catch((err: unknown) => {
+    console.error("[Sloom] FATAL failed to start:", (err as Error).message);
     process.exit(1);
   });
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-		process.on(signal, () => {
-      console.log(`${signal} received, shutting down`);
+    process.on(signal, () => {
+      console.log(`[Sloom] ${signal} received, shutting down`);
       process.exit(0);
     });
   }

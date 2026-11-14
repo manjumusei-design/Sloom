@@ -1,11 +1,11 @@
 import sharp from "sharp";
 
 export interface OverlayOptions {
-    angle: number | null;
+  angle: number | null;
 }
 
 export function overlayPathFor(framePath: string): string {
-    return framePath.replace(".png", "-overlay.png");
+  return framePath.replace(".png", "-overlay.png");
 }
 
 const DOOM_WIDTH = 320;
@@ -30,30 +30,10 @@ const COLOR_FACING = "#ffcc00";
 const DEG_TO_RAD = Math.PI / 180;
 
 const DIRS = [ //used ai here for plotting the coordinates because I was lazy :/
-  {
-    label: "N",
-    a: 90,
-    path: "M -3,5 L -3,-5 L 3,5 L 3,-5",
-    color: COLOR_NORTH,
-  },
-  {
-    label: "E",
-    a: 0,
-    path: "M 3,-5 L -3,-5 L -3,5 L 3,5 M -3,0 L 1,0",
-    color: COLOR_WHITE,
-  },
-  {
-    label: "S",
-    a: 270,
-    path: "M 3,-5 L -3,-5 L -3,0 L 3,0 L 3,5 L -3,5",
-    color: COLOR_WHITE,
-  },
-  {
-    label: "W",
-    a: 180,
-    path: "M -3,-5 L -1.5,5 L 0,-2 L 1.5,5 L 3,-5",
-    color: COLOR_WHITE,
-  },
+  { label: "N", a: 90, path: "M -3,5 L -3,-5 L 3,5 L 3,-5", color: COLOR_NORTH },
+  { label: "E", a: 0, path: "M 3,-5 L -3,-5 L -3,5 L 3,5 M -3,0 L 1,0", color: COLOR_WHITE },
+  { label: "S", a: 270, path: "M 3,-5 L -3,-5 L -3,0 L 3,0 L 3,5 L -3,5", color: COLOR_WHITE },
+  { label: "W", a: 180, path: "M -3,-5 L -1.5,5 L 0,-2 L 1.5,5 L 3,-5", color: COLOR_WHITE },
 ] as const;
 
 export async function applyOverlay(
@@ -62,9 +42,9 @@ export async function applyOverlay(
   opts: OverlayOptions,
 ): Promise<string> {
   const angle = opts.angle ?? 0;
-}
+
   const svg = `
-<svg width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}" xmlns="http://www.w3.org/2000/svg"> //thank god for w3 schools
+<svg width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
   <g transform="translate(${FRAME_WIDTH - COMPASS_MARGIN_X}, ${COMPASS_MARGIN_Y})">
     ${compassRose(angle)}
   </g>

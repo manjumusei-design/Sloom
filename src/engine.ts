@@ -1,38 +1,38 @@
-import {spawn, type ChildProcess } from "node:child_process";
-import {createInterface} from "node:readline";
-import {tmpdir} from "node:os";
-import {join} from "node:path":
+import { spawn, type ChildProcess } from "node:child_process";
+import { createInterface } from "node:readline";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export const TICS_PER_TURN = 4;
 export const DEGREES_PER_TIC = 7;
-export const TURN_IN_FLIGHT = "turn in progress";
+export const TURN_IN_FLIGHT = "turn already in flight";
 export const STARTUP_TIMEOUT_MS = 15000;
 
 export interface TurnResult {
-	framePath: string;
-	angle: number | null;
-	focus: FocusInfo | null;
+  framePath: string;
+  angle: number | null;
+  focus: FocusInfo | null;
   health: number | null;
   dead: boolean;
   kills: number | null;
   totalKills: number | null;
 }
-
 export interface FocusInfo {
-	deg: number;
-	blocks: number;
+  deg: number;
+  blocks: number;
 }
 
-export interface EngineSession{
-	process: ChildProcess;
-	framePath: string;
+export interface EngineSession {
+  process: ChildProcess;
+  framePath: string;
   pending: { resolve: (r: TurnResult) => void; reject: (e: Error) => void } | null;
   ready: Promise<TurnResult>;
   lastAngle: number | null;
-	lastFocus: FocusInfo | null;
+  lastFocus: FocusInfo | null;
   lastHealth: number | null;
   lastDead: boolean;
   lastKills: number | null;
+  lastTotalKills: number | null;
 }
 
 const ENGINE_BINARY = process.env.DOOM_ENGINE_PATH ?? "native/sloom";
@@ -73,12 +73,11 @@ export function startEngine(): EngineSession {
 
   let readySettled = false;
   let resolveReady: (r: TurnResult) => void = () => {};
-  let rejectReady : (e: Error) => void = () => {};
+  let rejectReady: (e: Error) => void = () => {};
   const ready = new Promise<TurnResult>((resolve, reject) => {
     resolveReady = resolve;
     rejectReady = reject;
   });
-
 
   const session: EngineSession = {
     process: proc,
@@ -92,7 +91,6 @@ export function startEngine(): EngineSession {
     lastKills: null,
     lastTotalKills: null,
   };
-
   const settleReady = (result: TurnResult, error?: Error) => {
     if (readySettled) return;
     readySettled = true;
@@ -101,7 +99,7 @@ export function startEngine(): EngineSession {
   };
 
   const startupTimer = setTimeout(() => {
-    settleReady({ ...stateOf(session), focus: null }, new Error("engine has no startup frame"));
+    settleReady({ ...stateOf(session), focus: null }, new Error("engine produced no startup frame"));
   }, STARTUP_TIMEOUT_MS);
 
   const rl = createInterface({ input: proc.stdout! });
@@ -109,6 +107,8 @@ export function startEngine(): EngineSession {
     const frame = line.match(FRAME_LINE);
     if (frame && frame[1]) {
       session.framePath = frame[1];
+      const result: TurnResult = { ...stateOf(session), focus: session.lastFocus };
+      session.lastFocus = null;
       if (session.pending) {
         const resolve = session.pending.resolve;
         session.pending = null;
@@ -129,13 +129,11 @@ export function startEngine(): EngineSession {
     if (angle && angle[1]) {
       session.lastAngle = parseInt(angle[1], 10);
     }
-  });
-
-    const health = DEAD_LINE.match(HEALTH_LINE)
+    const health = line.match(HEALTH_LINE);
     if (health && health[1]) {
       session.lastHealth = parseInt(health[1], 10);
     }
-    const dead = DEAD_LINE.match(DEAD_LINE);
+    const dead = line.match(DEAD_LINE);
     if (dead && dead[1]) {
       session.lastDead = dead[1] === "1";
     }
@@ -144,6 +142,7 @@ export function startEngine(): EngineSession {
       session.lastKills = parseInt(stats[1], 10);
       session.lastTotalKills = parseInt(stats[2], 10);
     }
+  });
 
   proc.on("exit", (code) => {
     clearTimeout(startupTimer);
@@ -170,11 +169,11 @@ export function startEngine(): EngineSession {
 export function sendTurn(
   session: EngineSession,
   keys: string[],
-  tics = 8,
-): Promise<string> {
+  tics = TICS_PER_TURN,
+): Promise<TurnResult> {
   return new Promise((resolve, reject) => {
     if (session.pending) {
-      reject(new Error("turn already in flight"));
+      reject(new Error(TURN_IN_FLIGHT));
       return;
     }
     session.pending = { resolve, reject };
