@@ -67,10 +67,12 @@ jobs:
           case "$out" in *"[dev] starting bot"*) ;; *) exit 1 ;; esac
           case "$out" in *"DEV_OK"*) ;; *) exit 1 ;; esac
 
-      - name: Fail when the app token entry is missing
+      - name: Fail when the keychain lookup fails
         run: |
-          security delete-generic-password -s sloom-slack-app-token || true
-          if bash scripts/dev.sh >/dev/null 2>&1; then
-            echo "dev.sh succeeded without a stored app token"
+          mkdir shim-security
+          printf '#!/bin/sh\nexit 1\n' > shim-security/security
+          chmod +x shim-security/security
+          if PATH="$PWD/shim-security:$PATH" bash scripts/dev.sh >/dev/null 2>&1; then
+            echo "dev.sh succeeded without working keychain access"
             exit 1
           fi
