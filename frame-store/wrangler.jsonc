@@ -1,0 +1,19 @@
+{
+  "name": "sloom-frames",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FRAMES",
+        "class_name": "FrameStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FrameStore"]
+    }
+  ]
+}
