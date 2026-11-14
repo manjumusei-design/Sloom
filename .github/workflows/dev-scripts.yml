@@ -38,8 +38,13 @@ jobs:
       - name: Reject a token with the wrong prefix
         run: |
           cmdkey /generic:sloom-slack-app-token /user:sloom /pass:"wrong-token"
+          New-Item -ItemType Directory -Path shim | Out-Null
+          Set-Content -Path shim/npx.cmd -Value "@echo off`necho BOT_SHOULD_NOT_START"
+          $env:PATH = "$(Resolve-Path shim);$env:PATH"
           try {
-            & ./scripts/dev.ps1
+            $out = & ./scripts/dev.ps1 2>&1 6>&1
+            Write-Host $out
+            if ($out -notmatch "BOT_SHOULD_NOT_START") { throw "dev.ps1 accepted an invalid token" }
             Write-Host "dev.ps1 accepted an invalid token"
             exit 1
           } catch {
@@ -69,10 +74,14 @@ jobs:
 
       - name: Fail when the keychain lookup fails
         run: |
-          mkdir shim-security
+          mkdir shim-security shim-npx
           printf '#!/bin/sh\nexit 1\n' > shim-security/security
-          chmod +x shim-security/security
-          if PATH="$PWD/shim-security:$PATH" bash scripts/dev.sh >/dev/null 2>&1; then
-            echo "dev.sh succeeded without working keychain access"
+          printf '#!/bin/sh\necho BOT_SHOULD_NOT_START\n' > shim-npx/npx
+          chmod +x shim-security/security shim-npx/npx
+          if perl -e 'alarm 30; exec @ARGV' env PATH="$PWD/shim-security:$PWD/shim-npx:$PATH" bash scripts/dev.sh > dev-out.log 2>&1; then
+            echo "dev.sh succeeded without working keychain access:"
+            cat dev-out.log
             exit 1
           fi
+          echo "dev.sh failed as expected:"
+          cat dev-out.log
