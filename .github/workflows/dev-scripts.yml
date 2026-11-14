@@ -13,6 +13,7 @@ on:
 jobs:
   powershell:
     runs-on: windows-latest
+    timeout-minutes: 10
     defaults:
       run:
         shell: pwsh
@@ -29,7 +30,7 @@ jobs:
           New-Item -ItemType Directory -Path shim | Out-Null
           Set-Content -Path shim/npx.cmd -Value "@echo off`necho DEV_OK"
           $env:PATH = "$(Resolve-Path shim);$env:PATH"
-          $out = & ./scripts/dev.ps1 2>&1
+          $out = & ./scripts/dev.ps1 2>&1 6>&1
           Write-Host $out
           if (-not ($out -match "\[dev\] starting bot")) { exit 1 }
           if (-not ($out -match "DEV_OK")) { exit 1 }
@@ -47,6 +48,7 @@ jobs:
 
   bash:
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -65,10 +67,10 @@ jobs:
           case "$out" in *"[dev] starting bot"*) ;; *) exit 1 ;; esac
           case "$out" in *"DEV_OK"*) ;; *) exit 1 ;; esac
 
-      - name: Reject a token with the wrong prefix
+      - name: Fail when the app token entry is missing
         run: |
-          security add-generic-password -U -s sloom-slack-app-token -a sloom -w "wrong-token"
+          security delete-generic-password -s sloom-slack-app-token || true
           if bash scripts/dev.sh >/dev/null 2>&1; then
-            echo "dev.sh accepted an invalid token"
+            echo "dev.sh succeeded without a stored app token"
             exit 1
           fi
