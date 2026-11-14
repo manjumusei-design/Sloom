@@ -41,16 +41,20 @@ public static class CredMan {
 "@
 
 function Read-Secret {
-  param([string]$service)
+  param([string]$service, [string]$prefix)
   $value = [CredMan]::ReadSecret($service)
   if ($null -eq $value) {
     Write-Error "MISSING: no Credential Manager entry for '$service'. Store it once with: cmdkey /generic:$service /user:sloom /pass:<token>"
   }
-  return $value.TrimEnd([char]0).Trim()
+  $value = $value.TrimEnd([char]0).Trim()
+  if (-not $value.StartsWith($prefix)) {
+    Write-Error "INVALID: Credential Manager entry '$service' does not start with '$prefix'."
+  }
+  return $value
 }
 
-$env:SLACK_APP_TOKEN = Read-Secret "sloom-slack-app-token"
-$env:SLACK_BOT_TOKEN = Read-Secret "sloom-slack-bot-token"
+$env:SLACK_APP_TOKEN = Read-Secret "sloom-slack-app-token" "xapp-"
+$env:SLACK_BOT_TOKEN = Read-Secret "sloom-slack-bot-token" "xoxb-"
 
 Write-Host "[dev] app token: present (xapp-, $($env:SLACK_APP_TOKEN.Length) chars)"
 Write-Host "[dev] bot token: present (xoxb-, $($env:SLACK_BOT_TOKEN.Length) chars)"
